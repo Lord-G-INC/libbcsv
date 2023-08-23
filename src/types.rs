@@ -8,7 +8,7 @@ pub struct Header {
     pub entrycount: u32,
     /// Amount of fields within the BCSV.
     pub fieldcount: u32,
-    /// Exact position where entries begin, should AWLAYS be after field data.
+    /// Exact position where entries begin, should ALWAYS be after field data.
     pub entrydataoff: u32,
     /// Total size of a entry row, should be the sum of all fields datatype size.
     pub entrysize: u32
