@@ -4,6 +4,7 @@ pub mod types;
 pub mod csv;
 pub mod convert;
 pub use binrw::Endian;
+pub use binrw;
 // Crate only exports
 use binrw::prelude::*;
 // Feature only mods

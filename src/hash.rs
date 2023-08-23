@@ -3,7 +3,8 @@ use std::{path::Path, collections::HashMap};
 pub fn calchash(text: &str) -> u32 {
     let mut output = 0u32;
     for char in text.bytes() {
-        output = (char as u32).wrapping_add(output.wrapping_mul(0x1F));
+        output = output.wrapping_mul(3);
+        output = output.wrapping_add(char as u32);
     }
     output
 }
