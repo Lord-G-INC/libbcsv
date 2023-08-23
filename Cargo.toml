@@ -14,7 +14,7 @@ c_exports = []
 cxx = ["cxx-build", "dep:cxx"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 cxx-build = { version = "1.0.105", optional = true }
