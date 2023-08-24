@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crate::*;
 use crate::types::*;
 use std::io::{Cursor, Write};
+use xlsxwriter::prelude::*;
 
 pub fn convert_to_csv(bcsv: BCSV, hashes: HashMap<u32, String>) -> String {
     let mut text = String::new();
@@ -97,4 +98,25 @@ pub fn convert_to_bcsv(mut csv: csv::CSV, endian: Endian, mask: u32) -> BinResul
     buffer.get_mut().resize(size, 0x40);
     buffer.write_all(table.as_bytes())?;
     Ok(buffer.into_inner())
+}
+
+pub fn convert_to_xlsx(bcsv: BCSV, hashes: HashMap<u32, String>, outpath: String) 
+    -> Result<(), BcsvError> {
+    let csv_data = bcsv.convert_to_csv(hashes);
+    let split = csv_data.split('\n').collect::<Vec<_>>();
+    let mut idx = 0;
+    let mut lines = vec![vec![String::new(); 0]; split.len()];
+    for line in split {
+        lines[idx] = line.split(',').map(|x| x.to_string()).collect();
+        idx += 1;
+    }
+    let writer = Workbook::new(&outpath)?;
+    let mut worksheet = writer.add_worksheet(None)?;
+    for i in 0..lines.len() {
+        let line = &lines[i];
+        for j in 0..line.len() {
+            worksheet.write_string(i as u32, j as u16, &line[j], None)?;
+        }
+    }
+    Ok(())
 }

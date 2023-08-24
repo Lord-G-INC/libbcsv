@@ -16,6 +16,7 @@ struct PtrInfo {
 const char* bcsv_to_csv(const char*, unsigned char*, size_t, unsigned char);
 PtrInfo csv_to_bcsv(const char*, unsigned char, unsigned int mask = UINT32_MAX);
 void free_PtrInfo(PtrInfo);
+void bcsv_to_xlsx(const char*, unsigned char*, const char*, size_t, unsigned char);
 
 #ifdef __cplusplus
 }

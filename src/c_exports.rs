@@ -50,3 +50,21 @@ pub unsafe extern "C" fn free_PtrInfo(info: PtrInfo) {
     let slice = std::slice::from_raw_parts_mut(ptr, len);
     drop(Box::<[u8]>::from_raw(slice));
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn bcsv_to_xlsx(hash_path: *const c_char, data: *const c_uchar, 
+    output: *const c_char, len: usize, endian: c_uchar) {
+        let buffer = std::slice::from_raw_parts(data, len).to_vec();
+        let mut stream = Cursor::new(buffer);
+        let endian = match endian {
+            0 => Endian::Big,
+            1 => Endian::Little,
+            _ => Endian::NATIVE
+        };
+        let bcsv = types::BCSV::read_options(&mut stream, endian, ())
+        .unwrap_or_default();
+        let hash_pth = CStr::from_ptr(hash_path).to_string_lossy().to_string();
+        let hashes = hash::read_hashes(hash_pth).unwrap_or_default();
+        let output_pth = CStr::from_ptr(output).to_string_lossy().to_string();
+        bcsv.convert_to_xlsx(hashes, output_pth).unwrap_or_default();
+    }

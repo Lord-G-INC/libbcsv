@@ -14,6 +14,8 @@ extern "C" {
     std::uint8_t) noexcept;
     void libbcsv$cxxbridge1$csv_to_bcsv(std::string const &, std::uint8_t, 
     std::vector<std::uint8_t> &, std::uint32_t) noexcept;
+    void libbcsv$cxxbridge1$bcsv_to_xlsx(std::string const &, std::vector<std::uint8_t> const &, 
+    std::string const &, std::uint8_t) noexcept;
 }
 
 namespace libbcsv {
@@ -23,4 +25,8 @@ void bcsv_to_csv(std::string &path, std::vector<std::uint8_t> const &data, std::
 void csv_to_bcsv(std::string const &path, std::uint8_t endian, std::vector<std::uint8_t> &buffer,
     std::uint32_t mask = UINT32_MAX) noexcept 
     {libbcsv$cxxbridge1$csv_to_bcsv(path, endian, buffer, mask);}
+
+void bcsv_to_xlsx(std::string const &path, std::vector<std::uint8_t> const &data, 
+    std::string const &output, std::uint8_t endian) noexcept 
+    {libbcsv$cxxbridge1$bcsv_to_xlsx(path, data, output, endian);}
 } // namespace libbcsv

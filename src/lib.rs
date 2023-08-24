@@ -3,10 +3,12 @@ pub mod hash;
 pub mod types;
 pub mod csv;
 pub mod convert;
+pub type BcsvError = Box<dyn Error>;
 pub use binrw::Endian;
 pub use binrw;
 // Crate only exports
 use binrw::prelude::*;
+use std::error::Error;
 // Feature only mods
 
 

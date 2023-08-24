@@ -133,6 +133,10 @@ impl BCSV {
     pub fn convert_to_csv(self, hashes: HashMap<u32, String>) -> String {
         convert::convert_to_csv(self, hashes)
     }
+    pub fn convert_to_xlsx(self, hashes: HashMap<u32, String>, outpath: String) 
+        -> Result<(), BcsvError> {
+        convert::convert_to_xlsx(self, hashes, outpath)
+    }
 }
 
 impl BinRead for BCSV {
