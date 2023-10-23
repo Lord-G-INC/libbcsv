@@ -1,12 +1,11 @@
-use std::{path::Path, collections::HashMap};
+use std::{path::Path, collections::HashMap, num::Wrapping};
 
 pub fn calchash(text: &str) -> u32 {
-    let mut output = 0u32;
+    let mut output = Wrapping(0u32);
     for char in text.bytes() {
-        output = output.wrapping_mul(31);
-        output = output.wrapping_add(char as u32);
+        output = Wrapping(char as u32) + output * Wrapping(0x1f);
     }
-    output
+    output.0
 }
 
 pub fn read_hashes<P: AsRef<Path>>(path: P) -> std::io::Result<HashMap<u32, String>> {
