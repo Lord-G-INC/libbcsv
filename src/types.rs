@@ -109,7 +109,8 @@ impl BinRead for Value {
             let res = match field.datatype {
                 0 | 3 => Ok(Value::LONG(reader.read_type(endian)?)),
                 1 => Ok(Value::STRING(reader.read_ne()?)),
-                4 => Ok(Value::FLOAT(reader.read_type(endian)?)),
+                2 => Ok(Value::FLOAT(reader.read_type(endian)?)),
+                4 => Ok(Value::SHORT(reader.read_type(endian)?)),
                 5 => Ok(Value::CHAR(reader.read_ne()?)),
                 6 => {
                     stroffs.push(reader.read_type(endian)?);
