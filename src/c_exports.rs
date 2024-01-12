@@ -11,8 +11,8 @@ pub struct PtrInfo {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn bcsv_to_csv(hash_path: *const c_char, data: *mut c_uchar, len: usize,
-    endian: c_uchar) -> *const c_char {
+pub unsafe extern "C" fn bcsv_to_csv(hash_path: *const c_char, data: *const c_uchar, len: usize,
+    endian: c_uchar) -> PtrInfo {
     let buffer = std::slice::from_raw_parts(data, len).to_vec();
     let mut stream = Cursor::new(buffer);
     let endian = match endian {
@@ -25,8 +25,9 @@ pub unsafe extern "C" fn bcsv_to_csv(hash_path: *const c_char, data: *mut c_ucha
     let hash_pth = CStr::from_ptr(hash_path).to_string_lossy().to_string();
     let hashes = hash::read_hashes(hash_pth).unwrap_or_default();
     let text = bcsv.convert_to_csv(hashes);
-    let result = CString::new(text).unwrap_or_default();
-    result.as_ptr()
+    let bx = Box::<[u8]>::from(text.as_bytes());
+    let len = bx.len();
+    PtrInfo { ptr: Box::into_raw(bx).cast(), len }
 }
 
 #[no_mangle]
