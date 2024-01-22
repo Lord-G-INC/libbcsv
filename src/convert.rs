@@ -32,49 +32,45 @@ pub fn convert_to_csv(bcsv: BCSV, hashes: HashMap<u32, String>) -> String {
             let last = i == bcsv.fields.len() - 1;
             let shift = bcsv.fields[i].shift;
             let mask = bcsv.fields[i].mask;
+            let term = match last { false => ',', true => '\n' };
             match &bcsv.values[v] {
                 Value::LONG(l) => {
                     let mut l = *l;
-                    l = (l & mask) >> shift as u32;
-                    l |= match l & 0x80000000 {
-                        0x80000000 => 0,
-                        _ => l
-                    };
-                    let txt = format!("{}", l) + match last { false => ",", true => "\n" };
+                    l = (l & mask as i32) >> shift as i32;
+                    let txt = format!("{}{}", l, term);
                     text.push_str(&txt);
                 }
                 Value::STRING(s) => {
                     text.push_str(&String::from(String::from_utf8_lossy(s)));
-                    text.push(match last { false => ',', true => '\n' });
+                    text.push(term);
                 }
                 Value::FLOAT(f) => {
-                    let txt = format!("{}", f) + match last { false => ",", true => "\n" };
+                    let txt = format!("{}{}", f, term);
+                    text.push_str(&txt);
+                }
+                Value::ULONG(u) => {
+                    let mut u = *u;
+                    u = (u & mask) >> shift;
+                    let txt = format!("{}{}", u, term);
                     text.push_str(&txt);
                 }
                 Value::SHORT(sh) => {
                     let mut sh = *sh;
                     sh = (sh & mask as u16) >> shift as u16;
-                    sh |= match sh & 0x8000 {
-                        0x8000 => 0,
-                        _ => sh
-                    };
-                    let txt = format!("{}", sh) + match last { false => ",", true => "\n" };
+                    let txt = format!("{}{}", sh, term);
                     text.push_str(&txt);
                 }
                 Value::CHAR(c) => {
-                    let mut c = *c as u32;
-                    c >>= shift as u32;
-                    c |= match c & 0x80 {
-                        0x80 => 0,
-                        _ => c
-                    };
-                    let txt = format!("{}", c) + match last { false => ",", true => "\n" };
+                    let mut c = *c;
+                    c = (c & mask as u8) >> shift as u8;
+                    let txt = format!("{}{}", c, term);
                     text.push_str(&txt);
                 }
                 Value::STRINGOFF(st) => {
                     text.push_str(st);
-                    text.push(match last { false => ',', true => '\n' });
+                    text.push(term);
                 }
+                Value::NULL => {}
             }
             v += 1;
         }

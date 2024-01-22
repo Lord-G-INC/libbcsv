@@ -1,6 +1,6 @@
 use crate::*;
 
-use std::{io::{SeekFrom, Read, Seek, Write}, collections::HashMap};
+use std::{collections::HashMap, io::{SeekFrom, Read, Seek, Write}};
 
 #[derive(Debug, Default, Clone, Copy, BinRead, BinWrite)]
 pub struct Header {
@@ -43,12 +43,14 @@ impl Field {
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    LONG(u32),
+    LONG(i32),
     STRING([u8; 32]),
+    ULONG(u32),
     FLOAT(f32),
     SHORT(u16),
     CHAR(u8),
-    STRINGOFF(String)
+    STRINGOFF(String),
+    NULL
 }
 
 impl Value {
@@ -81,6 +83,7 @@ impl Value {
         match self {
             Value::LONG(l) => writer.write_type(l, endian),
             Value::STRING(s) => writer.write_ne(s),
+            Value::ULONG(u) => writer.write_type(u, endian),
             Value::FLOAT(f) => writer.write_type(f, endian),
             Value::SHORT(s) => writer.write_type(s, endian),
             Value::CHAR(c) => writer.write_ne(c),
@@ -107,16 +110,17 @@ impl BinRead for Value {
             let pos = reader.seek(SeekFrom::Current(0))?;
             reader.seek(SeekFrom::Current(off))?;
             let res = match field.datatype {
-                0 | 3 => Ok(Value::LONG(reader.read_type(endian)?)),
+                0 => Ok(Value::LONG(reader.read_type(endian)?)),
                 1 => Ok(Value::STRING(reader.read_ne()?)),
                 2 => Ok(Value::FLOAT(reader.read_type(endian)?)),
+                3 => Ok(Value::ULONG(reader.read_type(endian)?)),
                 4 => Ok(Value::SHORT(reader.read_type(endian)?)),
                 5 => Ok(Value::CHAR(reader.read_ne()?)),
                 6 => {
                     stroffs.push(reader.read_type(endian)?);
                     Ok(Value::STRINGOFF(String::default()))
                 }
-                _ => Err(binrw::Error::NoVariantMatch { pos: 112 })
+                _ => Ok(Value::NULL)
             };
             reader.seek(SeekFrom::Start(pos))?;
             res
