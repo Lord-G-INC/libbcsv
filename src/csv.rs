@@ -130,9 +130,10 @@ impl CSV {
                 let f = &bcsv.fields[i];
                 let val = &values[row][i];
                 match f.datatype {
-                    0 | 3 | 6 => bcsv.values.push(Value::LONG(val.parse().unwrap_or_default())),
+                    0 => bcsv.values.push(Value::LONG(val.parse().unwrap_or_default())),
                     1 => bcsv.values.push(Value::STRING(val.as_bytes().try_into().unwrap_or_default())),
                     2 => bcsv.values.push(Value::FLOAT(val.parse().unwrap_or_default())),
+                    3 | 6 => bcsv.values.push(Value::ULONG(val.parse().unwrap_or_default())),
                     4 => bcsv.values.push(Value::SHORT(val.parse().unwrap_or_default())),
                     5 => bcsv.values.push(Value::CHAR(val.parse().unwrap_or_default())),
                     _ => {}
