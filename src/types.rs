@@ -142,6 +142,20 @@ impl BCSV {
         -> Result<(), BcsvError> {
         convert::convert_to_xlsx(self, hashes, outpath)
     }
+    pub fn get_entries(&self) -> HashMap<u32, Vec<Value>> {
+        let mut result = HashMap::new();
+        let fc = self.fields.len();
+        for i in 0..fc {
+            let mut j = i;
+            let mut values = vec![];
+            while j < self.values.len() {
+                values.push(self.values[j].clone());
+                j += fc;
+            }
+            result.insert(self.fields[i].hash, values).unwrap_or_default();
+        }
+        result
+    }
 }
 
 impl BinRead for BCSV {
