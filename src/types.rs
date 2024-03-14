@@ -14,7 +14,7 @@ pub struct Header {
     pub entrysize: u32
 }
 
-#[derive(Debug, Default, Clone, Copy, BinRead, BinWrite)]
+#[derive(Debug, Default, Clone, Copy, BinRead, BinWrite, PartialEq, Eq, Hash)]
 pub struct Field {
     pub hash: u32,
     pub mask: u32,
@@ -166,7 +166,7 @@ impl BCSV {
         -> Result<(), BcsvError> {
         convert::convert_to_xlsx(self, hashes, outpath)
     }
-    pub fn get_entries(&self) -> HashMap<u32, Vec<Value>> {
+    pub fn get_entries(&self) -> HashMap<Field, Vec<Value>> {
         let mut result = HashMap::new();
         let fc = self.fields.len();
         for i in 0..fc {
@@ -176,9 +176,34 @@ impl BCSV {
                 values.push(self.values[j].clone());
                 j += fc;
             }
-            result.insert(self.fields[i].hash, values).unwrap_or_default();
+            result.insert(self.fields[i], values).unwrap_or_default();
         }
         result
+    }
+    pub fn get_sorted_fields(&self) -> Vec<Field> {
+        let mut clone = self.fields.clone();
+        clone.sort_by(|x, y| x.get_field_order().cmp(&y.get_field_order()));
+        clone
+    }
+    pub fn write_value<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
+        writer.write_type(&self.header, endian)?;
+        for field in &self.fields {
+            writer.write_type(field, endian)?;
+        }
+        let sorted = self.get_sorted_fields();
+        let fc = sorted.len();
+        let mut entries = self.get_entries();
+        let mut i = 0;
+        while i < self.values.len() {
+            for j in 0..fc {
+                let values = entries.get_mut(&sorted[j]).unwrap();
+                let first = &values[0];
+                first.write_value(writer, endian)?;
+                values.remove(0);
+                i = i + 1;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -228,37 +253,5 @@ impl BinRead for BCSV {
             result.values[pos[i]] = Value::read_string_off(reader, off)?;
         }
         Ok(result)
-    }
-}
-
-impl BinWrite for BCSV {
-    type Args<'a> = ();
-    fn write_options<W: Write + Seek>(
-            &self,
-            writer: &mut W,
-            endian: Endian,
-            _: Self::Args<'_>,
-        ) -> BinResult<()> {
-            writer.write_type(&self.header, endian)?;
-            for field in &self.fields {
-                writer.write_type(field, endian)?;
-            }
-            let mut v = 0;
-            while v != self.values.len() {
-                if v == self.values.len() {
-                    break;
-                }
-                for i in 0..self.fields.len() {
-                    let f = &self.fields[i];
-                    let val = &self.values[v];
-                    let pos = writer.seek(SeekFrom::Current(0))?;
-                    writer.seek(SeekFrom::Current(f.dataoff as i64))?;
-                    val.write_value(writer, endian)?;
-                    writer.seek(SeekFrom::Start(pos))?;
-                    v += 1;
-                }
-                writer.seek(SeekFrom::Current(self.header.entrysize as i64))?;
-            }
-            Ok(())
     }
 }

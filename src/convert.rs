@@ -86,7 +86,7 @@ pub fn convert_to_bcsv(mut csv: csv::CSV, endian: Endian, mask: u32) -> BinResul
     for field in &mut bcsv.fields {
         field.mask = mask;
     }
-    bcsv.write_options(&mut buffer, endian, ())?;
+    bcsv.write_value(&mut buffer, endian)?;
     let stroff = bcsv.header.entrydataoff as usize + bcsv.header.entrysize as usize *
         bcsv.header.entrycount as usize;
     let mut size = table.len() + stroff;
