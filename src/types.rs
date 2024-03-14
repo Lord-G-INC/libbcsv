@@ -39,6 +39,18 @@ impl Field {
     pub const fn new() -> Self {
         Self { hash: 0, mask: u32::MAX, dataoff: 0, shift: 0, datatype: 0 }
     }
+    pub const fn get_field_order(&self) -> i8 {
+        match self.datatype {
+            1 => 0,
+            3 => 1,
+            0 => 2,
+            2 => 3,
+            4 => 4,
+            5 => 5,
+            6 => 6,
+            7 | _ => -1
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +100,18 @@ impl Value {
             Value::SHORT(s) => writer.write_type(s, endian),
             Value::CHAR(c) => writer.write_ne(c),
             _ => Ok(())
+        }
+    }
+    pub const fn get_field_order(&self) -> i8 {
+        match self {
+            Value::STRING(_) => 0,
+            Value::FLOAT(_) => 1,
+            Value::LONG(_) => 2,
+            Value::ULONG(_) => 3,
+            Value::SHORT(_) => 4,
+            Value::CHAR(_) => 5,
+            Value::STRINGOFF(_) => 6, 
+            Value::NULL => -1
         }
     }
 }

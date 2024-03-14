@@ -52,7 +52,7 @@ impl CSV {
         }
         let mut doff = 0;
         let mut clone = result.fields.clone();
-        clone.sort_by(|x, y| x.hash.cmp(&y.hash));
+        clone.sort_by(|x, y| x.get_field_order().cmp(&y.get_field_order()));
         for mut f in clone {
             f.dataoff = doff;
             doff += f.getdtsize();
@@ -61,7 +61,7 @@ impl CSV {
         }
         result.header.fieldcount = result.fields.len() as u32;
         result.header.entrysize = doff as u32;
-        let off = 16 + 12 * result.header.fieldcount;
+        let off = 16 + (12 * result.header.fieldcount);
         result.header.entrydataoff = off;
         result.generate_values();
         Ok(result)
