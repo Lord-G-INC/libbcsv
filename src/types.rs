@@ -1,20 +1,73 @@
+use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}};
+
 use crate::*;
 
-use std::{collections::HashMap, io::{SeekFrom, Read, Seek, Write}};
-
-#[derive(Debug, Default, Clone, Copy, BinRead, BinWrite)]
+#[derive(Clone, Copy, Debug, Default, BinRead, BinWrite)]
 pub struct Header {
-    /// Amount of entries a field has.
     pub entrycount: u32,
-    /// Amount of fields within the BCSV.
     pub fieldcount: u32,
-    /// Exact position where entries begin, should ALWAYS be after field data.
     pub entrydataoff: u32,
-    /// Total size of a entry row, should be the sum of all fields datatype size.
     pub entrysize: u32
 }
 
-#[derive(Debug, Default, Clone, Copy, BinRead, BinWrite, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum FieldType {
+    LONG,
+    STRING,
+    FLOAT,
+    ULONG,
+    SHORT,
+    CHAR,
+    STRINGOFF,
+    NULL
+}
+
+impl From<u8> for FieldType {
+    fn from(value: u8) -> Self {
+        if value > 6 {
+            Self::NULL
+        } else {
+            unsafe {std::mem::transmute(value)}
+        }
+    }
+}
+
+impl FieldType {
+    pub const fn size(&self) -> u16 {
+        match self {
+            Self::NULL => 0,
+            Self::LONG | Self::ULONG | Self::FLOAT | Self::STRINGOFF => 4,
+            Self::SHORT => 2,
+            Self::CHAR => 1,
+            Self::STRING => 32
+        }
+    }
+
+    pub const fn mask(&self) -> u32 {
+        match self {
+            Self::NULL | Self::STRING => 0,
+            Self::LONG | Self::FLOAT | Self::ULONG | Self::STRINGOFF => u32::MAX,
+            Self::SHORT => 0xFFFF,
+            Self::CHAR => 0xFF
+        }
+    }
+
+    pub const fn order(&self) -> i32 {
+        match self {
+            Self::NULL => -1,
+            Self::LONG => 2,
+            Self::STRING => 0,
+            Self::FLOAT => 1,
+            Self::ULONG => 3,
+            Self::SHORT => 4,
+            Self::CHAR => 5,
+            Self::STRINGOFF => 6
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, BinRead, BinWrite, Hash, PartialEq, Eq)]
 pub struct Field {
     pub hash: u32,
     pub mask: u32,
@@ -24,234 +77,306 @@ pub struct Field {
 }
 
 impl Field {
-    pub const fn getdtsize(&self) -> u16 {
-        match self.datatype {
-            0 | 2 | 3 | 6 => 4,
-            1 => 32,
-            4 => 2,
-            5 => 1,
-            _ => 0
-        }
+    pub fn get_field_type(&self) -> FieldType {
+        self.datatype.into()
     }
-    pub const fn is_stringoff(&self) -> bool {
-        self.datatype == 6
-    }
-    pub const fn new() -> Self {
-        Self { hash: 0, mask: u32::MAX, dataoff: 0, shift: 0, datatype: 0 }
-    }
-    pub const fn get_field_order(&self) -> i8 {
-        match self.datatype {
-            1 => 0,
-            3 => 1,
-            0 => 2,
-            2 => 3,
-            4 => 4,
-            5 => 5,
-            6 => 6,
-            7 | _ => -1
+    pub fn get_name(&self, hashes: &HashMap<u32, String>) -> String {
+        if let Some(val) = hashes.get(&self.hash) {
+            val.clone()
+        } else {
+            format!("0x{:X}", self.hash)
         }
     }
 }
 
-#[derive(Debug, Clone)]
+impl PartialOrd for Field {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.get_field_type().order().partial_cmp(&other.get_field_type().order())
+    }
+}
+
+impl Ord for Field {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.get_field_type().order().cmp(&other.get_field_type().order())
+    }
+}
+
+#[derive(Clone, Debug)]
 pub enum Value {
     LONG(i32),
     STRING([u8; 32]),
-    ULONG(u32),
     FLOAT(f32),
+    ULONG(u32),
     SHORT(u16),
     CHAR(u8),
-    STRINGOFF(String),
+    STRINGOFF((u32, String)),
     NULL
 }
 
 impl Value {
-    pub const fn is_stringoff(&self) -> bool {
-        use Value::*;
-        match self {
-            STRINGOFF(_) => true,
-            _ => false
+    pub fn new(field: Field) -> Self {
+        match field.get_field_type() {
+            FieldType::LONG => Self::LONG(0),
+            FieldType::STRING => Self::STRING([0u8; 32]),
+            FieldType::FLOAT => Self::FLOAT(0.0),
+            FieldType::ULONG => Self::ULONG(0),
+            FieldType::SHORT => Self::SHORT(0),
+            FieldType::CHAR => Self::CHAR(0),
+            FieldType::STRINGOFF => Self::STRINGOFF(Default::default()),
+            FieldType::NULL => Self::NULL
         }
     }
-    /// Reads a string off, reader position **NEEDS** to be the start of the stringtable.
-    /// 
-    /// Will match to `Value::STRINGOFF` on success
-    pub fn read_string_off<R: BinReaderExt>(reader: &mut R, off: i64) -> BinResult<Value> {
-        let mut bytes = vec![];
-        let pos = reader.seek(SeekFrom::Current(0))?;
+
+    pub(crate) fn recalc(&mut self, field: Field) {
+        match self {
+            Self::LONG(lng) => {
+                *lng &= FieldType::LONG.mask() as i32;
+                *lng >>= field.shift as i32;
+            },
+            Self::ULONG(ulng) => {
+                *ulng &= FieldType::ULONG.mask();
+                *ulng >>= field.shift as u32;
+            },
+            Self::SHORT(ust) => {
+                *ust &= FieldType::SHORT.mask() as u16;
+                *ust >>= field.shift as u16;
+            },
+            Self::CHAR(b) => {
+                *b &= FieldType::CHAR.mask() as u8;
+                *b >>= field.shift;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian,
+        row: i64, header: Header, field: Field) -> BinResult<()> {
+        let oldpos = reader.seek(SeekFrom::Current(0))?;
+        let off = row * header.entrysize as i64 + field.dataoff as i64;
         reader.seek(SeekFrom::Current(off))?;
-        let mut byte = 1u8;
-        while byte != 0 {
-            byte = reader.read_ne()?;
-            if byte == 0 {
-                break;
-            }
-            bytes.push(byte);
-        }
-        reader.seek(SeekFrom::Start(pos))?;
-        Ok(Value::STRINGOFF(String::from_utf8_lossy(&bytes).into()))
-    }
-    pub fn write_value<W: BinWriterExt>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
         match self {
-            Value::LONG(l) => writer.write_type(l, endian),
-            Value::STRING(s) => writer.write_ne(s),
-            Value::ULONG(u) => writer.write_type(u, endian),
-            Value::FLOAT(f) => writer.write_type(f, endian),
-            Value::SHORT(s) => writer.write_type(s, endian),
-            Value::CHAR(c) => writer.write_ne(c),
-            _ => Ok(())
-        }
-    }
-    pub const fn get_field_order(&self) -> i8 {
-        match self {
-            Value::STRING(_) => 0,
-            Value::FLOAT(_) => 1,
-            Value::LONG(_) => 2,
-            Value::ULONG(_) => 3,
-            Value::SHORT(_) => 4,
-            Value::CHAR(_) => 5,
-            Value::STRINGOFF(_) => 6, 
-            Value::NULL => -1
-        }
-    }
-}
-
-impl Default for Value {
-    fn default() -> Self {
-        Self::LONG(0)
-    }
-}
-
-impl BinRead for Value {
-    type Args<'a> = (&'a Field, &'a mut Vec<u32>, i64, u32);
-    fn read_options<R: Read + Seek>(
-            reader: &mut R,
-            endian: Endian,
-            args: Self::Args<'_>,
-        ) -> BinResult<Self> {
-            let (field, stroffs, row, entrysize) = args;
-            let off = row * entrysize as i64 + field.dataoff as i64;
-            let pos = reader.seek(SeekFrom::Current(0))?;
-            reader.seek(SeekFrom::Current(off))?;
-            let res = match field.datatype {
-                0 => Ok(Value::LONG(reader.read_type(endian)?)),
-                1 => Ok(Value::STRING(reader.read_ne()?)),
-                2 => Ok(Value::FLOAT(reader.read_type(endian)?)),
-                3 => Ok(Value::ULONG(reader.read_type(endian)?)),
-                4 => Ok(Value::SHORT(reader.read_type(endian)?)),
-                5 => Ok(Value::CHAR(reader.read_ne()?)),
-                6 => {
-                    stroffs.push(reader.read_type(endian)?);
-                    Ok(Value::STRINGOFF(String::default()))
-                }
-                _ => Ok(Value::NULL)
-            };
-            reader.seek(SeekFrom::Start(pos))?;
-            res
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct BCSV {
-    pub header: Header,
-    pub fields: Vec<Field>,
-    pub values: Vec<Value>
-}
-
-impl BCSV {
-    pub fn convert_to_csv(self, hashes: HashMap<u32, String>) -> String {
-        convert::convert_to_csv(self, hashes)
-    }
-    pub fn convert_to_xlsx(self, hashes: HashMap<u32, String>, outpath: String) 
-        -> Result<(), BcsvError> {
-        convert::convert_to_xlsx(self, hashes, outpath)
-    }
-    pub fn get_entries(&self) -> HashMap<Field, Vec<Value>> {
-        let mut result = HashMap::new();
-        let fc = self.fields.len();
-        for i in 0..fc {
-            let mut j = i;
-            let mut values = vec![];
-            while j < self.values.len() {
-                values.push(self.values[j].clone());
-                j += fc;
+            Self::LONG(l) => {
+                *l = reader.read_type(endian)?;
+            },
+            Self::STRING(s) => {
+                *s = reader.read_ne()?;
+            },
+            Self::FLOAT(f) => {
+                *f = reader.read_type(endian)?;
+            },
+            Self::ULONG(ul) => {
+                *ul = reader.read_type(endian)?;
+            },
+            Self::SHORT(sh) => {
+                *sh = reader.read_type(endian)?
+            },
+            Self::CHAR(c) => {
+                *c = reader.read_ne()?;
+            },
+            Self::STRINGOFF((o, _)) => {
+                *o = reader.read_type(endian)?;
             }
-            result.insert(self.fields[i], values).unwrap_or_default();
+            Self::NULL => {},
         }
-        result
+        reader.seek(SeekFrom::Start(oldpos))?;
+        self.recalc(field);
+        self.calc_stringoff(reader, header)?;
+        Ok(())
     }
-    pub fn get_sorted_fields(&self) -> Vec<Field> {
-        let mut clone = self.fields.clone();
-        clone.sort_by(|x, y| x.get_field_order().cmp(&y.get_field_order()));
-        clone
-    }
-    pub fn write_value<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
-        writer.write_type(&self.header, endian)?;
-        for field in &self.fields {
-            writer.write_type(field, endian)?;
-        }
-        let sorted = self.get_sorted_fields();
-        let fc = sorted.len();
-        let mut entries = self.get_entries();
-        let mut i = 0;
-        while i < self.values.len() {
-            for j in 0..fc {
-                let values = entries.get_mut(&sorted[j]).unwrap();
-                let first = &values[0];
-                first.write_value(writer, endian)?;
-                values.remove(0);
-                i = i + 1;
+
+    pub(crate) fn calc_stringoff<R: Read + Seek>(&mut self, reader: &mut R, header: Header) -> BinResult<()> {
+        if let Self::STRINGOFF((n, str)) = self {
+            let stringoff = (header.entrydataoff + header.entrycount * header.entrysize) as u64;
+            let oldpos = reader.seek(SeekFrom::Current(0))?;
+            reader.seek(SeekFrom::Start(stringoff))?;
+            reader.seek(SeekFrom::Current(*n as i64))?;
+            let mut bytes = vec![0u8; 0];
+            let mut byte: u8 = reader.read_ne()?;
+            while byte != 0 {
+                bytes.push(byte);
+                byte = reader.read_ne()?;
             }
+            *str = String::from(String::from_utf8_lossy(&bytes));
+            reader.seek(SeekFrom::Start(oldpos))?;
         }
         Ok(())
     }
+
+    pub fn get_string(&self) -> String {
+        match self {
+            Self::LONG(l) => {
+                format!("{}", l)
+            },
+            Self::STRING(s) => {
+                String::from(String::from_utf8_lossy(s))
+            },
+            Self::FLOAT(f) => {
+                format!("{}", f)
+            },
+            Self::ULONG(ul) => {
+                format!("{}", ul)
+            },
+            Self::SHORT(sh) => {
+                format!("{}", sh)
+            },
+            Self::CHAR(c) => {
+                format!("{}", c)
+            },
+            Self::STRINGOFF((_, st)) => {
+                st.clone()
+            }
+            Self::NULL => String::from("NULL")
+        }
+    }
+
+    pub fn write<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
+        match self {
+            Self::LONG(l) => writer.write_type(l, endian),
+            Self::STRING(s) => writer.write_ne(s),
+            Self::FLOAT(f) => writer.write_type(f, endian),
+            Self::ULONG(ul) => writer.write_type(ul, endian),
+            Self::SHORT(sh) => writer.write_type(sh, endian),
+            Self::CHAR(c) => writer.write_ne(c),
+            Self::STRINGOFF((off, _)) => writer.write_type(off, endian),
+            Self::NULL => Ok(())
+        }
+    }
 }
 
-impl BinRead for BCSV {
-    type Args<'a> = ();
-    fn read_options<R: Read + Seek>(
-            reader: &mut R,
-            endian: Endian,
-            _: Self::Args<'_>,
-        ) -> BinResult<Self> {
-        let mut result = Self::default();
-        {
-        let Self {header, fields, ..} = &mut result;
+#[derive(Clone, Debug, Default)]
+pub struct BCSV {
+    pub header: Header,
+    pub fields: Vec<Field>,
+    pub(crate) values: Vec<Value>,
+    pub(crate) dictonary: HashMap<Field, Vec<Value>>
+}
+
+impl BCSV {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian) -> BinResult<()> {
+        let Self {header, fields, values, dictonary} = self;
         *header = reader.read_type(endian)?;
         *fields = vec![Field::default(); header.fieldcount as usize];
-        for i in 0..fields.len() {
-            fields[i] = reader.read_type(endian)?;
+        for field in fields.iter_mut() {
+            *field = reader.read_type(endian)?;
+            dictonary.insert(*field, vec![]);
         }
-        }
-        // SAFETY: position needs to be entrydataoff.
-        reader.seek(SeekFrom::Start(result.header.entrydataoff as u64))?;
-        let entrysize = result.header.entrycount as usize * result.fields.len();
+        reader.seek(SeekFrom::Start(header.entrydataoff as u64))?;
+        let entrysize = header.entrycount as usize * fields.len();
         let mut v = 0;
-        let mut entryoffs = vec![];
         let mut row = 0;
         while v != entrysize {
             if v >= entrysize {
                 break;
             }
-            for field in &result.fields {
-                let args = 
-                (field, &mut entryoffs, row, result.header.entrysize);
-                result.values.push(Value::read_options(reader, endian, args)?);
+            for field in fields.iter() {
+                let mut value = Value::new(*field);
+                value.read(reader, endian, row, *header, *field)?;
+                values.push(value.clone());
+                if let Some(entries) = dictonary.get_mut(field) {
+                    entries.push(value);
+                }
                 v += 1;
             }
             row += 1;
         }
-        // SAFETY: reader needs to be at start of stringtable
-        let stringoff = (result.header.entrydataoff +
-            result.header.entrycount*result.header.entrysize) as u64;
-        reader.seek(SeekFrom::Start(stringoff))?;
-        let pos = result.values.iter()
-        .enumerate().filter(|(_, x)| x.is_stringoff())
-        .map(|(x, _)| x).collect::<Vec<_>>();
-        for i in 0..pos.len() {
-            let off = entryoffs[i] as i64;
-            result.values[pos[i]] = Value::read_string_off(reader, off)?;
+        Ok(())
+    }
+
+    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>) -> String {
+        let mut result = String::new();
+        for i in 0..self.fields.len() {
+            let last = i == self.fields.len() - 1;
+            let term = match last { true => '\n', false => ',' };
+            result += &format!("{}:{}{}", self.fields[i].get_name(hashes), self.fields[i].datatype, term);
         }
-        Ok(result)
+        let mut v = 0;
+        while v < self.values.len() {
+            for i in 0..self.fields.len() {
+                let last = i == self.fields.len() - 1;
+                let term = match last { false => ',', true => '\n' };
+                result += &format!("{}{}", self.values[v].get_string(), term);
+                v += 1;
+            }
+        }
+        result
+    }
+
+    pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, hashes: &HashMap<u32, String>) -> Result<(), BcsvError> {
+        let book = xlsxwriter::Workbook::new(name.as_ref())?;
+        let mut sheet = book.add_worksheet(None)?;
+        for i in 0..self.fields.len() {
+            let text = format!("{}:{}", self.fields[i].get_name(hashes), self.fields[i].datatype);
+            sheet.write_string(0 as u32, i as u16, &text, None)?;
+        }
+        for i in 0..self.fields.len() {
+            let values = &self.dictonary[&self.fields[i]];
+            for j in 0..values.len() {
+                sheet.write_string((j + 1) as u32, i as u16, &values[j].get_string(), None)?;
+            }
+        }
+        book.close()?;
+        Ok(())
+    }
+
+    pub fn sort_fields(&self) -> Vec<Field> {
+        let mut clone = self.fields.clone();
+        clone.sort_by(|x, y| x.cmp(y));
+        clone
+    }
+
+    pub fn write<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
+        {
+            let Self {header, fields, ..} = self;
+            writer.write_type(header, endian)?;
+            for field in fields {
+                writer.write_type(field, endian)?;
+            }
+        }
+        let mut v = 0;
+        let mut dict = self.dictonary.clone().into_iter().collect::<Vec<_>>();
+        dict.sort_by(|x, y| x.0.cmp(&y.0));
+        while v != self.values.len() {
+            if v >= self.values.len() {
+                break;
+            }
+            for (_, vals) in &mut dict {
+                vals[0].write(writer, endian)?;
+                vals.remove(0);
+                v += 1;
+            }
+        }
+        let stringoff = (self.header.entrydataoff + self.header.entrycount * self.header.entrysize) as u64;
+        let mut end = writer.seek(SeekFrom::End(0))?;
+        if end != stringoff {
+           let ioerr = std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof, "End and StrOff don't match");
+           return Err(ioerr.into())
+        }
+        for value in &self.values {
+            if let Value::STRINGOFF((off, str)) = value {
+                let curoff = writer.seek(SeekFrom::Current(0))?;
+                let realoff = *off as i64;
+                writer.seek(SeekFrom::Current(realoff))?;
+                writer.write_all(str.as_bytes())?;
+                writer.write_ne(&0u8)?;
+                writer.seek(SeekFrom::Start(curoff))?;
+            }
+        }
+        end = writer.seek(SeekFrom::End(0))?;
+        let padded = end + ((end + 31 & !31) - end);
+        let dist = padded - end;
+        let buffer = vec![0x40u8; dist as usize];
+        writer.write_all(&buffer)?;
+        Ok(())
+    }
+
+    pub fn to_bytes(&self, endian: Endian) -> BinResult<Vec<u8>> {
+        let mut stream = Cursor::new(vec![]);
+        self.write(&mut stream, endian)?;
+        Ok(stream.into_inner())
     }
 }
