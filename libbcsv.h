@@ -17,9 +17,9 @@ struct PtrInfo {
     ~PtrInfo() { free_PtrInfo(*this); }
 };
 
-PtrInfo bcsv_to_csv(const char*, const unsigned char*, size_t, unsigned char);
-PtrInfo csv_to_bcsv(const char*, unsigned char, unsigned int);
-void bcsv_to_xlsx(const char*, const unsigned char*, const char*, size_t, unsigned char);
+PtrInfo bcsv_to_csv(const char*, const uint8_t*, size_t, uint8_t);
+PtrInfo csv_to_bcsv(const char*, uint8_t);
+void bcsv_to_xlsx(const char*, const char*, const uint8_t*, size_t, uint8_t);
 
 #ifdef __cplusplus
 }

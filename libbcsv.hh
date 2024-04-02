@@ -12,17 +12,17 @@
 extern "C" {
 std::vector<std::uint8_t> *libbcsv$cxxbridge1$bcsv_to_csv(std::string const &path, std::vector<std::uint8_t> const &data, std::uint8_t endian) noexcept;
 
-std::vector<std::uint8_t> *libbcsv$cxxbridge1$csv_to_bcsv(std::string const &path, std::uint8_t endian, std::uint32_t mask) noexcept;
+std::vector<std::uint8_t> *libbcsv$cxxbridge1$csv_to_bcsv(std::string const &path, std::uint8_t endian) noexcept;
 
-void libbcsv$cxxbridge1$bcsv_to_xlsx(std::string const &path, std::vector<std::uint8_t> const &data, std::string const &output, std::uint8_t endian) noexcept;
+void libbcsv$cxxbridge1$bcsv_to_xlsx(std::string const &path, std::string const &output, std::vector<std::uint8_t> const &data, std::uint8_t endian) noexcept;
 } // extern "C"
 
 namespace libbcsv {
 std::unique_ptr<std::vector<std::uint8_t>> bcsv_to_csv(std::string const &path, std::vector<std::uint8_t> const &data, std::uint8_t endian) noexcept;
 
-std::unique_ptr<std::vector<std::uint8_t>> csv_to_bcsv(std::string const &path, std::uint8_t endian, std::uint32_t mask) noexcept;
+std::unique_ptr<std::vector<std::uint8_t>> csv_to_bcsv(std::string const &path, std::uint8_t endian) noexcept;
 
-void bcsv_to_xlsx(std::string const &path, std::vector<std::uint8_t> const &data, std::string const &output, std::uint8_t endian) noexcept;
+void bcsv_to_xlsx(std::string const &path, std::string const &output, std::vector<std::uint8_t> const &data, std::uint8_t endian) noexcept;
 } // namespace libbcsv
 
 std::unique_ptr<std::vector<std::uint8_t>> 
@@ -32,11 +32,10 @@ noexcept {
 }
 
 std::unique_ptr<std::vector<std::uint8_t>>
-libbcsv::csv_to_bcsv(const std::string& path, std::uint8_t endian, std::uint32_t mask) noexcept {
-    return std::unique_ptr<std::vector<std::uint8_t>>(libbcsv$cxxbridge1$csv_to_bcsv(path, endian, mask));
+libbcsv::csv_to_bcsv(const std::string& path, std::uint8_t endian) noexcept {
+    return std::unique_ptr<std::vector<std::uint8_t>>(libbcsv$cxxbridge1$csv_to_bcsv(path, endian));
 }
 
-void libbcsv::bcsv_to_xlsx(const std::string& path, const std::vector<std::uint8_t>& data, 
-const std::string& output, std::uint8_t endian) noexcept {
-    libbcsv$cxxbridge1$bcsv_to_xlsx(path, data, output, endian);
+void libbcsv::bcsv_to_xlsx(const std::string& path, const std::string& output, const std::vector<std::uint8_t>& data, std::uint8_t endian) noexcept {
+    libbcsv$cxxbridge1$bcsv_to_xlsx(path, output, data, endian);
 }
