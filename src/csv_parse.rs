@@ -120,16 +120,3 @@ impl CSV {
         types::BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict}
     }
 }
-
-#[test]
-fn testing() -> Result<(), BcsvError> {
-    let csv = CSV::from_path("..\\test.csv")?;
-    let data = csv.create_bcsv().to_bytes(Endian::Big)?;
-    let mut cursor = std::io::Cursor::new(data);
-    let mut bcsv = types::BCSV::new();
-    bcsv.read(&mut cursor, Endian::Big)?;
-    let hashes = hash::read_hashes("..\\lookup_supermariogalaxy.txt")?;
-    let text = bcsv.convert_to_csv(&hashes);
-    std::fs::write("..\\new_test.csv", text)?;
-    Ok(())
-}
