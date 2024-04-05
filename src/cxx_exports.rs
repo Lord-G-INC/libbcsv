@@ -25,7 +25,7 @@ pub fn bcsv_to_csv(path: &CxxString, data: &CxxVector<u8>, endian: u8) -> Unique
     let hashes = hash::read_hashes(path).unwrap_or_default();
     let mut bcsv = types::BCSV::new();
     bcsv.read(&mut reader, endian).unwrap_or_default();
-    let text = bcsv.convert_to_csv(&hashes);
+    let text = bcsv.convert_to_csv(&hashes, false);
     let bytes = text.as_bytes();
     let mut result = CxxVector::new();
     let mut pin = result.pin_mut();
@@ -48,7 +48,7 @@ pub fn bcsv_to_xlsx(path: &CxxString, output: &CxxString, data: &CxxVector<u8>, 
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
     let output_path = output.to_string_lossy();
-    bcsv.convert_to_xlsx(output_path, &hashes).unwrap_or_default();
+    bcsv.convert_to_xlsx(output_path, &hashes, false).unwrap_or_default();
 }
 
 pub fn csv_to_bcsv(path: &CxxString, endian: u8) -> UniquePtr<CxxVector<u8>> {

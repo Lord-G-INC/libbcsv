@@ -28,7 +28,7 @@ pub unsafe extern "C" fn bcsv_to_csv(hash_path: *const i8, data: *const u8, len:
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
-    let text = bcsv.convert_to_csv(&hashes);
+    let text = bcsv.convert_to_csv(&hashes, false);
     let bx = Box::<[u8]>::from(text.as_bytes());
     let len = bx.len();
     PtrInfo {ptr: Box::into_raw(bx).cast(), len}
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn bcsv_to_xlsx(hash_path: *const i8, output_path: *const 
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
-    bcsv.convert_to_xlsx(CStr::from_ptr(output_path).to_string_lossy(), &hashes).unwrap_or_default();
+    bcsv.convert_to_xlsx(CStr::from_ptr(output_path).to_string_lossy(), &hashes, false).unwrap_or_default();
 }
 
 #[no_mangle]

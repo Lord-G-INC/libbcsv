@@ -26,7 +26,7 @@ impl CSV {
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BcsvError> {
         let mut result = Self::default();
-        let mut rdr = csv::Reader::from_path(path)?;
+        let mut rdr = csv::ReaderBuilder::new().delimiter(b',').from_path(path)?;
         for header in rdr.headers()?.iter() {
             let split = header.split(':').collect::<Vec<_>>();
             let name = split[0];
@@ -63,10 +63,10 @@ impl CSV {
                         *ul = entry.parse()?;
                     },
                     types::Value::SHORT(s) => {
-                        *s = entry.parse()?;
+                        *s = entry.parse::<i32>()? as _;
                     },
                     types::Value::CHAR(c) => {
-                        *c = entry.parse()?;
+                        *c = entry.parse::<i16>()? as _;
                     },
                     types::Value::STRINGOFF((_, data)) => {
                         *data = String::from(entry);

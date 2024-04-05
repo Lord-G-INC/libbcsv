@@ -208,7 +208,7 @@ impl Value {
         Ok(())
     }
 
-    pub fn get_string(&self) -> String {
+    pub fn get_string(&self, signed: bool) -> String {
         match self {
             Self::LONG(l) => {
                 format!("{}", l)
@@ -222,11 +222,17 @@ impl Value {
             Self::ULONG(ul) => {
                 format!("{}", ul)
             },
-            Self::SHORT(sh) => {
-                format!("{}", sh)
+            Self::SHORT(sh) => {    
+                match signed {
+                    true => format!("{}", *sh as i16),
+                    false => format!("{}", sh)
+                }
             },
             Self::CHAR(c) => {
-                format!("{}", c)
+                match signed {
+                    true => format!("{}", *c as i8),
+                    false => format!("{}", c)
+                }
             },
             Self::STRINGOFF((_, st)) => {
                 st.clone()
@@ -292,7 +298,7 @@ impl BCSV {
         Ok(())
     }
 
-    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>) -> String {
+    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>, signed: bool) -> String {
         let mut result = String::new();
         for i in 0..self.fields.len() {
             let last = i == self.fields.len() - 1;
@@ -304,14 +310,14 @@ impl BCSV {
             for i in 0..self.fields.len() {
                 let last = i == self.fields.len() - 1;
                 let term = match last { false => ',', true => '\n' };
-                result += &format!("{}{}", self.values[v].get_string(), term);
+                result += &format!("{}{}", self.values[v].get_string(signed), term);
                 v += 1;
             }
         }
         result
     }
 
-    pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, hashes: &HashMap<u32, String>) -> Result<(), BcsvError> {
+    pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, hashes: &HashMap<u32, String>, signed: bool) -> Result<(), BcsvError> {
         let book = xlsxwriter::Workbook::new(name.as_ref())?;
         let mut sheet = book.add_worksheet(None)?;
         for i in 0..self.fields.len() {
@@ -321,7 +327,7 @@ impl BCSV {
         for i in 0..self.fields.len() {
             let values = &self.dictonary[&self.fields[i]];
             for j in 0..values.len() {
-                sheet.write_string((j + 1) as u32, i as u16, &values[j].get_string(), None)?;
+                sheet.write_string((j + 1) as u32, i as u16, &values[j].get_string(signed), None)?;
             }
         }
         book.close()?;
