@@ -24,9 +24,9 @@ impl CSV {
         result
     }
 
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BcsvError> {
+    pub fn from_path<P: AsRef<Path>>(path: P, delim: char) -> Result<Self, BcsvError> {
         let mut result = Self::default();
-        let mut rdr = csv::ReaderBuilder::new().delimiter(b',').from_path(path)?;
+        let mut rdr = csv::ReaderBuilder::new().delimiter(delim as u8).from_path(path)?;
         for header in rdr.headers()?.iter() {
             let split = header.split(':').collect::<Vec<_>>();
             let name = split[0];

@@ -298,18 +298,18 @@ impl BCSV {
         Ok(())
     }
 
-    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>, signed: bool) -> String {
+    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>, signed: bool, delim: char) -> String {
         let mut result = String::new();
         for i in 0..self.fields.len() {
             let last = i == self.fields.len() - 1;
-            let term = match last { true => '\n', false => ',' };
+            let term = match last { true => '\n', false => delim };
             result += &format!("{}:{}{}", self.fields[i].get_name(hashes), self.fields[i].datatype, term);
         }
         let mut v = 0;
         while v < self.values.len() {
             for i in 0..self.fields.len() {
                 let last = i == self.fields.len() - 1;
-                let term = match last { false => ',', true => '\n' };
+                let term = match last { false => delim, true => '\n' };
                 result += &format!("{}{}", self.values[v].get_string(signed), term);
                 v += 1;
             }

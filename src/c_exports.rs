@@ -28,7 +28,7 @@ pub unsafe extern "C" fn bcsv_to_csv(hash_path: *const i8, data: *const u8, len:
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
-    let text = bcsv.convert_to_csv(&hashes, false);
+    let text = bcsv.convert_to_csv(&hashes, false, ',');
     let bx = Box::<[u8]>::from(text.as_bytes());
     let len = bx.len();
     PtrInfo {ptr: Box::into_raw(bx).cast(), len}
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn csv_to_bcsv(path: *const i8, endian: u8) -> PtrInfo {
         _ => Endian::NATIVE
     };
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
-    let csv = csv_parse::CSV::from_path(path).unwrap_or_default();
+    let csv = csv_parse::CSV::from_path(path, ',').unwrap_or_default();
     let data = csv.create_bcsv().to_bytes(endian).unwrap_or_default();
     let len = data.len();
     PtrInfo { ptr: Box::into_raw(data.into_boxed_slice()).cast(), len }
