@@ -10,6 +10,12 @@ pub struct Header {
     pub entrysize: u32
 }
 
+impl Header {
+    pub const fn stringoffset(&self) -> u64 {
+        (self.entrydataoff + self.entrycount * self.entrysize) as u64
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum FieldType {
@@ -46,8 +52,8 @@ impl FieldType {
 
     pub const fn mask(&self) -> u32 {
         match self {
-            Self::NULL | Self::STRING => 0,
-            Self::LONG | Self::FLOAT | Self::ULONG | Self::STRINGOFF => u32::MAX,
+            Self::NULL | Self::STRING | Self::FLOAT => 0,
+            Self::LONG | Self::ULONG | Self::STRINGOFF => u32::MAX,
             Self::SHORT => 0xFFFF,
             Self::CHAR => 0xFF
         }
@@ -186,7 +192,7 @@ impl Value {
 
     pub(crate) fn calc_stringoff<R: Read + Seek>(&mut self, reader: &mut R, header: Header) -> BinResult<()> {
         if let Self::STRINGOFF((n, str)) = self {
-            let stringoff = (header.entrydataoff + header.entrycount * header.entrysize) as u64;
+            let stringoff = header.stringoffset();
             let oldpos = reader.seek(SeekFrom::Current(0))?;
             reader.seek(SeekFrom::Start(stringoff))?;
             reader.seek(SeekFrom::Current(*n as i64))?;
@@ -323,9 +329,17 @@ impl BCSV {
     }
 
     pub fn sort_fields(&self) -> Vec<Field> {
-        let mut clone = self.fields.clone();
-        clone.sort_by(|x, y| x.cmp(y));
-        clone
+        let mut result = vec![];
+        let strings = self.fields.iter().filter(|x| x.datatype == 1)
+        .map(|x| *x).collect::<Vec<_>>();
+        result.extend(strings);
+        let floats = self.fields.iter().filter(|x| x.datatype == 2)
+        .map(|x| *x).collect::<Vec<_>>();
+        result.extend(floats);
+        let others = self.fields.iter()
+        .filter(|x| x.datatype != 1 && x.datatype != 2).map(|x| *x).collect::<Vec<_>>();
+        result.extend(others);
+        result
     }
 
     pub fn write<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
@@ -337,19 +351,21 @@ impl BCSV {
             }
         }
         let mut v = 0;
-        let mut dict = self.dictonary.clone().into_iter().collect::<Vec<_>>();
-        dict.sort_by(|x, y| x.0.cmp(&y.0));
+        let mut dict = self.dictonary.clone();
+        let sorted = self.sort_fields();
         while v != self.values.len() {
             if v >= self.values.len() {
                 break;
             }
-            for (_, vals) in &mut dict {
-                vals[0].write(writer, endian)?;
-                vals.remove(0);
-                v += 1;
+            for f in &sorted {
+                if let Some(vals) = dict.get_mut(f) {
+                    vals[0].write(writer, endian)?;
+                    vals.remove(0);
+                    v += 1;
+                }
             }
         }
-        let stringoff = (self.header.entrydataoff + self.header.entrycount * self.header.entrysize) as u64;
+        let stringoff = self.header.stringoffset();
         let mut end = writer.seek(SeekFrom::End(0))?;
         if end != stringoff {
            let ioerr = std::io::Error::new(

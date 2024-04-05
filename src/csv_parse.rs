@@ -11,9 +11,17 @@ pub struct CSV {
 
 impl CSV {
     pub fn get_sorted_fields(&self) -> Vec<types::Field> {
-        let mut clone = self.fields.clone();
-        clone.sort_by(|x, y| x.cmp(&y));
-        clone
+        let mut result = vec![];
+        let strings = self.fields.iter().filter(|x| x.datatype == 1)
+        .map(|x| *x).collect::<Vec<_>>();
+        result.extend(strings);
+        let floats = self.fields.iter().filter(|x| x.datatype == 2)
+        .map(|x| *x).collect::<Vec<_>>();
+        result.extend(floats);
+        let others = self.fields.iter()
+        .filter(|x| x.datatype != 1 && x.datatype != 2).map(|x| *x).collect::<Vec<_>>();
+        result.extend(others);
+        result
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, BcsvError> {
@@ -88,32 +96,12 @@ impl CSV {
         }
         result.header.entrysize = result.fields.iter().map(|x| x.get_field_type().size() as u32).sum();
         result.header.entrydataoff = 16 + (12 * result.header.fieldcount);
-        result.calc_stringoffs();
+        let mut table = string_table::StringTable::new();
+        table.update_offs(&mut result.entries);
+        for (_, vals) in &mut result.dict {
+            table.update_offs(vals);
+        }
         Ok(result)
-    }
-
-    pub (crate) fn calc_stringoffs(&mut self) {
-        let mut offs = HashMap::new();
-        let mut num = 0;
-        for value in &mut self.entries {
-            if let types::Value::STRINGOFF((off, str)) = value {
-                if !offs.contains_key(str) {
-                    *off = num as u32;
-                    offs.insert(str.clone(), num as u32);
-                    num += str.len() + 1;
-                }
-            }
-        }
-        for (f, v) in &mut self.dict {
-            if f.datatype != 6 {
-                continue;
-            }
-            for value in v {
-                if let types::Value::STRINGOFF((off, str)) = value {
-                    *off = offs[str];
-                }
-            }
-        }
     }
 
     pub fn create_bcsv(self) -> types::BCSV {

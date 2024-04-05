@@ -2,6 +2,7 @@
 pub mod hash;
 pub mod types;
 pub mod csv_parse;
+pub mod string_table;
 pub type BcsvError = Box<dyn Error>;
 pub use binrw::Endian;
 pub use binrw;
