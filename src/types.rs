@@ -1,6 +1,7 @@
 use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}};
 
 use crate::*;
+use encoding_rs::SHIFT_JIS;
 
 #[derive(Clone, Copy, Debug, Default, BinRead, BinWrite)]
 pub struct Header {
@@ -202,7 +203,8 @@ impl Value {
                 bytes.push(byte);
                 byte = reader.read_ne()?;
             }
-            *str = String::from(String::from_utf8_lossy(&bytes));
+            let (dec, _, _) = SHIFT_JIS.decode(&bytes);
+            *str = dec.into();
             reader.seek(SeekFrom::Start(oldpos))?;
         }
         Ok(())
@@ -383,7 +385,8 @@ impl BCSV {
                 let curoff = writer.seek(SeekFrom::Current(0))?;
                 let realoff = *off as i64;
                 writer.seek(SeekFrom::Current(realoff))?;
-                writer.write_all(str.as_bytes())?;
+                let (data, _, _) = SHIFT_JIS.encode(str);
+                writer.write_all(&data)?;
                 writer.write_ne(&0u8)?;
                 writer.seek(SeekFrom::Start(curoff))?;
             }
