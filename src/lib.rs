@@ -6,7 +6,6 @@ pub mod string_table;
 pub type BcsvError = Box<dyn Error>;
 pub use binrw::Endian;
 pub use binrw;
-pub use csv;
 // Crate only exports
 use binrw::prelude::*;
 use std::error::Error;

@@ -12,8 +12,9 @@ pub struct Header {
 }
 
 impl Header {
+    /// The offset of the string table.
     pub const fn stringoffset(&self) -> u64 {
-        (self.entrydataoff + self.entrycount * self.entrysize) as u64
+        (self.entrydataoff + (self.entrycount * self.entrysize)) as u64
     }
 }
 
@@ -41,6 +42,7 @@ impl From<u8> for FieldType {
 }
 
 impl FieldType {
+    /// The byte size of the type, STRINGOFF is 4 because it writes a offset to the Values Section.
     pub const fn size(&self) -> u16 {
         match self {
             Self::NULL => 0,
@@ -50,7 +52,7 @@ impl FieldType {
             Self::STRING => 32
         }
     }
-
+    /// The bit mask to use for calculations, only works on the integral types.
     pub const fn mask(&self) -> u32 {
         match self {
             Self::NULL | Self::STRING | Self::FLOAT => 0,
@@ -59,7 +61,7 @@ impl FieldType {
             Self::CHAR => 0xFF
         }
     }
-
+    /// The order of which the Field should be written, used in the Ord/PartialOrd impl.
     pub const fn order(&self) -> i32 {
         match self {
             Self::NULL => -1,
@@ -84,9 +86,11 @@ pub struct Field {
 }
 
 impl Field {
+    /// Gets the FieldType for this Field
     pub fn get_field_type(&self) -> FieldType {
         self.datatype.into()
     }
+    /// Attempts to get the name of this field using the Hash Table, will return a formated hex string if not present.
     pub fn get_name(&self, hashes: &HashMap<u32, String>) -> String {
         if let Some(val) = hashes.get(&self.hash) {
             val.clone()
@@ -114,13 +118,14 @@ pub enum Value {
     STRING([u8; 32]),
     FLOAT(f32),
     ULONG(u32),
-    SHORT(u16),
-    CHAR(u8),
+    SHORT(i16),
+    CHAR(i8),
     STRINGOFF((u32, String)),
     NULL
 }
 
 impl Value {
+    /// Creates a new Value based off the FieldType of the Field.
     pub fn new(field: Field) -> Self {
         match field.get_field_type() {
             FieldType::LONG => Self::LONG(0),
@@ -145,17 +150,17 @@ impl Value {
                 *ulng >>= field.shift as u32;
             },
             Self::SHORT(ust) => {
-                *ust &= FieldType::SHORT.mask() as u16;
+                *ust &= FieldType::SHORT.mask() as i16;
                 *ust >>= field.shift as u16;
             },
             Self::CHAR(b) => {
-                *b &= FieldType::CHAR.mask() as u8;
+                *b &= FieldType::CHAR.mask() as i8;
                 *b >>= field.shift;
             }
             _ => {}
         }
     }
-
+    /// Reads the value based off row, header, and field info.
     pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian,
         row: i64, header: Header, field: Field) -> BinResult<()> {
         let oldpos = reader.seek(SeekFrom::Current(0))?;
@@ -209,7 +214,7 @@ impl Value {
         }
         Ok(())
     }
-
+    /// Gets a formatted string based off the Value's inner data.
     pub fn get_string(&self, signed: bool) -> String {
         match self {
             Self::LONG(l) => {
@@ -226,14 +231,14 @@ impl Value {
             },
             Self::SHORT(sh) => {    
                 match signed {
-                    true => format!("{}", *sh as i16),
-                    false => format!("{}", sh)
+                    true => format!("{}", sh),
+                    false => format!("{}", *sh as u16)
                 }
             },
             Self::CHAR(c) => {
                 match signed {
-                    true => format!("{}", *c as i8),
-                    false => format!("{}", c)
+                    true => format!("{}", c),
+                    false => format!("{}", *c as u8)
                 }
             },
             Self::STRINGOFF((_, st)) => {
@@ -242,7 +247,7 @@ impl Value {
             Self::NULL => String::from("NULL")
         }
     }
-
+    /// Writes to the writer based off the Value's inner data.
     pub fn write<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
         match self {
             Self::LONG(l) => writer.write_type(l, endian),
@@ -269,7 +274,7 @@ impl BCSV {
     pub fn new() -> Self {
         Self::default()
     }
-
+    /// Reads the BCSV info off the reader.
     pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian) -> BinResult<()> {
         let Self {header, fields, values, dictonary} = self;
         *header = reader.read_type(endian)?;
@@ -299,7 +304,7 @@ impl BCSV {
         }
         Ok(())
     }
-
+    /// Converts all data to readable CSV data.
     pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>, signed: bool, delim: char) -> String {
         let mut result = String::new();
         for i in 0..self.fields.len() {
@@ -318,7 +323,7 @@ impl BCSV {
         }
         result
     }
-
+    /// Converts all data to a Excel Worksheet.
     pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, hashes: &HashMap<u32, String>, signed: bool) -> Result<(), BcsvError> {
         let book = xlsxwriter::Workbook::new(name.as_ref())?;
         let mut sheet = book.add_worksheet(None)?;
@@ -335,21 +340,14 @@ impl BCSV {
         book.close()?;
         Ok(())
     }
-
+    /// Sorts the Fields off their order.
+    /// Refer to `FieldType::Order` for more.
     pub fn sort_fields(&self) -> Vec<Field> {
-        let mut result = vec![];
-        let strings = self.fields.iter().filter(|x| x.datatype == 1)
-        .map(|x| *x).collect::<Vec<_>>();
-        result.extend(strings);
-        let floats = self.fields.iter().filter(|x| x.datatype == 2)
-        .map(|x| *x).collect::<Vec<_>>();
-        result.extend(floats);
-        let others = self.fields.iter()
-        .filter(|x| x.datatype != 1 && x.datatype != 2).map(|x| *x).collect::<Vec<_>>();
-        result.extend(others);
+        let mut result = self.fields.clone();
+        result.sort();
         result
     }
-
+    /// Writes all data to the writer, this function makes various size/length checks during writing.
     pub fn write<W: Write + Seek>(&self, writer: &mut W, endian: Endian) -> BinResult<()> {
         {
             let Self {header, fields, ..} = self;
@@ -358,18 +356,12 @@ impl BCSV {
                 writer.write_type(field, endian)?;
             }
         }
-        let mut v = 0;
-        let mut dict = self.dictonary.clone();
         let sorted = self.sort_fields();
-        while v != self.values.len() {
-            if v >= self.values.len() {
-                break;
-            }
+        for i in 0..self.header.entrycount as usize {
             for f in &sorted {
-                if let Some(vals) = dict.get_mut(f) {
-                    vals[0].write(writer, endian)?;
-                    vals.remove(0);
-                    v += 1;
+                if let Some(entries) = self.dictonary.get(f) {
+                    let val = &entries[i];
+                    val.write(writer, endian)?;
                 }
             }
         }
@@ -398,7 +390,7 @@ impl BCSV {
         writer.write_all(&buffer)?;
         Ok(())
     }
-
+    /// Alais to `write` using a `Cursor<Vec<u8>>`.
     pub fn to_bytes(&self, endian: Endian) -> BinResult<Vec<u8>> {
         let mut stream = Cursor::new(vec![]);
         self.write(&mut stream, endian)?;
