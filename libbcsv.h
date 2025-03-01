@@ -7,19 +7,20 @@ extern "C" {
 #include <stdio.h>
 #include <stdint.h>
 
-struct PtrInfo;
-
-void free_PtrInfo(PtrInfo);
-
-struct PtrInfo {
-    unsigned char* ptr;
-    size_t len;
-    ~PtrInfo() { free_PtrInfo(*this); }
+struct ManagedBuffer {
+    uint8_t *buffer;
+    uintptr_t len;
 };
 
-PtrInfo bcsv_to_csv(const char*, const uint8_t*, size_t, uint8_t);
-PtrInfo csv_to_bcsv(const char*, uint8_t);
-void bcsv_to_xlsx(const char*, const char*, const uint8_t*, size_t, uint8_t);
+void free_managed_buffer(const ManagedBuffer *buffer);
+
+const ManagedBuffer* bcsv_to_csv(const uint8_t* data, uintptr_t len, const int8_t* hash_path,
+    bool is_signed, uint8_t endian, uint8_t delim);
+
+void bcsv_to_xlsx(const int8_t* hash_path, const int8_t* output_path, const uint8_t* data, uintptr_t len,
+    bool is_signed, uint8_t endian);
+
+const ManagedBuffer* csv_to_bcsv(const int8_t* path, uint8_t endian, uint8_t delim);
 
 #ifdef __cplusplus
 }

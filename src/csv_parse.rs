@@ -1,24 +1,28 @@
 use crate::*;
+use crate::types::*;
 use std::{collections::HashMap, path::Path};
 
 #[derive(Debug, Default, Clone)]
+/// A CSV file. Used to convert from CSV to BCSV.
 pub struct CSV {
-    pub header: types::Header,
-    pub fields: Vec<types::Field>,
-    pub(crate) entries: Vec<types::Value>,
-    pub(crate) dict: HashMap<types::Field, Vec<types::Value>>
+    /// The BCSV header calculated from the CSV.
+    pub header: Header,
+    /// The fields calculated from the CSV.
+    pub fields: Vec<Field>,
+    pub(crate) entries: Vec<Value>,
+    pub(crate) dict: HashMap<Field, Vec<Value>>
 }
 
 impl CSV {
-    /// Produces a Vec of Fields Sorted by their FieldType's order.
-    /// Refer to `FieldType::Order` for more.
-    pub fn get_sorted_fields(&self) -> Vec<types::Field> {
+    /// Produces a [`Vec`] of Fields Sorted by their [`FieldType`]'s order.
+    /// Refer to [`FieldType::order`] for more.
+    pub fn get_sorted_fields(&self) -> Vec<Field> {
         let mut fields = self.fields.clone();
         fields.sort();
         fields
     }
-    /// Parses a `CSV` from the path, using a delimeter to split the text.
-    /// Empty values will result in `Default::default` being used.
+    /// Parses a [`CSV`] from the path, using a delimeter to split the text.
+    /// Empty values will result in [`Default::default`] being used.
     pub fn from_path<P: AsRef<Path>>(path: P, delim: char) -> Result<Self, BcsvError> {
         let mut result = Self::default();
         let text = std::fs::read_to_string(path)?.replace('\r', "");
@@ -31,7 +35,7 @@ impl CSV {
                     let split = info[j].split(':').collect::<Vec<_>>();
                     let name = split[0];
                     let dt = split[1];
-                    let mut field = types::Field::default();
+                    let mut field = Field::default();
                     field.datatype = dt.parse()?;
                     field.mask = field.get_field_type().mask();
                     if !name.starts_with("0x") {
@@ -46,30 +50,30 @@ impl CSV {
                 for j in 0..info.len() {
                     let v = info[j];
                     let field = result.fields[j];
-                    let mut value = types::Value::new(field);
+                    let mut value = Value::new(field);
                     match &mut value {
-                        types::Value::LONG(l) => {
+                        Value::LONG(l) => {
                             *l = v.parse().unwrap_or_default();
                         },
-                        types::Value::STRING(st) => {
+                        Value::STRING(st) => {
                             *st = v.as_bytes().try_into().unwrap_or_default();
                         },
-                        types::Value::FLOAT(f) => {
+                        Value::FLOAT(f) => {
                             *f = v.parse().unwrap_or_default();
                         },
-                        types::Value::ULONG(ul) => {
+                        Value::ULONG(ul) => {
                             *ul = v.parse().unwrap_or_default();
                         },
-                        types::Value::SHORT(s) => {
+                        Value::SHORT(s) => {
                             *s = v.parse().unwrap_or_default();
                         },
-                        types::Value::CHAR(c) => {
+                        Value::CHAR(c) => {
                             *c = v.parse().unwrap_or_default();
                         },
-                        types::Value::STRINGOFF((_, data)) => {
+                        Value::STRINGOFF((_, data)) => {
                             *data = String::from(v);
                         },
-                        types::Value::NULL => {}
+                        Value::NULL => {}
                     }
                     result.entries.push(value.clone());
                     if let Some(vec) = result.dict.get_mut(&field) {
@@ -103,7 +107,7 @@ impl CSV {
         Ok(result)
     }
     /// Creates a BCSV using the internal info stored
-    pub fn create_bcsv(self) -> types::BCSV {
-        types::BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict}
+    pub fn create_bcsv(self) -> BCSV {
+        BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict}
     }
 }

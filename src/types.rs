@@ -4,15 +4,20 @@ use crate::*;
 use encoding_rs::SHIFT_JIS;
 
 #[derive(Clone, Copy, Debug, Default, BinRead, BinWrite)]
+/// The header information of a BCSV file. There is no magic to the format.
 pub struct Header {
+    /// The count of entries owned by a **single** field. Should **always** be the same for all fields.
     pub entrycount: u32,
+    /// The total count of fields.
     pub fieldcount: u32,
+    /// Absolute offset to the Entry section of the format. Explained further in the Entry docs.
     pub entrydataoff: u32,
+    /// The bytesize of a **single** row. Should **always** be the sum of all Fields DataType Size.
     pub entrysize: u32
 }
 
 impl Header {
-    /// The offset of the string table.
+    /// The absolute offset of the string table.
     pub const fn stringoffset(&self) -> u64 {
         (self.entrydataoff + (self.entrycount * self.entrysize)) as u64
     }
@@ -20,14 +25,23 @@ impl Header {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
+/// The possible types a Field can be. Anything >= 7 is unknown/null.
 pub enum FieldType {
+    /// A *signed* 32 bit integer. Equivalent to [`i32`].
     LONG,
+    /// A fixed 32 length  string. Unused on the Wii.
     STRING,
+    /// A 32 bit floating point number. Equivalent to [`f32`].
     FLOAT,
+    /// A *unsigned* 32 bit integer. Equivalent to [`u32`].
     ULONG,
+    /// A 16 bit integer. Can be signed/unsigned. Equivalent to [`i16`]/[`u16`]
     SHORT,
+    /// A 8 bit integer. Can be signed/unsigned. Equivalent to [`i8`]/[`u8`]
     CHAR,
+    /// A 32 bit offset to a string in a table. Is always unsigned.
     STRINGOFF,
+    /// A unknown type. This value exists only to denote a invalid type.
     NULL
 }
 
@@ -42,7 +56,7 @@ impl From<u8> for FieldType {
 }
 
 impl FieldType {
-    /// The byte size of the type, STRINGOFF is 4 because it writes a offset to the Values Section.
+    /// The byte size of the type, [`FieldType::STRINGOFF`] is 4 because it writes a offset to the Values Section.
     pub const fn size(&self) -> u16 {
         match self {
             Self::NULL => 0,
@@ -77,18 +91,28 @@ impl FieldType {
 }
 
 #[derive(Clone, Copy, Debug, Default, BinRead, BinWrite, Hash, PartialEq, Eq)]
+/// A BCSV Field. Contains information regarding the values owned by this Field.
 pub struct Field {
+    /// The hash name of the field. Calculated by [`hash::calchash`].
     pub hash: u32,
+    /// The bitmask for some calculations. Usually [`FieldType::mask`], but can be different.
     pub mask: u32,
+    /// Relative offset to the entries owned by this Field.
     pub dataoff: u16,
+    /// The bitshift for some calculations. Usually 0, but can be different.
     pub shift: u8,
+    /// The [`FieldType`] of this Field.
     pub datatype: u8
 }
 
 impl Field {
-    /// Gets the FieldType for this Field
-    pub fn get_field_type(&self) -> FieldType {
-        self.datatype.into()
+    /// Gets the [`FieldType`] for this Field
+    pub const fn get_field_type(&self) -> FieldType {
+        if self.datatype > 6 {
+            FieldType::NULL
+        } else {
+            unsafe {std::mem::transmute(self.datatype)}
+        }
     }
     /// Attempts to get the name of this field using the Hash Table, will return a formated hex string if not present.
     pub fn get_name(&self, hashes: &HashMap<u32, String>) -> String {
@@ -113,20 +137,29 @@ impl Ord for Field {
 }
 
 #[derive(Clone, Debug)]
+/// A BCSV value. Heavily dependant on the [`Field`] that owns this Value.
 pub enum Value {
+    /// A signed 32 bit integer.
     LONG(i32),
+    /// A 32 length string. Not used on the Wii.
     STRING([u8; 32]),
+    /// A 32 bit floating point number.
     FLOAT(f32),
+    /// A unsigned 32 bit integer.
     ULONG(u32),
+    /// A 16 bit integer.
     SHORT(i16),
+    /// A 8 bit integer.
     CHAR(i8),
+    /// A unsigned 32 bit integer to hold the offset, and the String itself.
     STRINGOFF((u32, String)),
+    /// A unknown type. This value only exists to denote invalid entries.
     NULL
 }
 
 impl Value {
     /// Creates a new Value based off the FieldType of the Field.
-    pub fn new(field: Field) -> Self {
+    pub const fn new(field: Field) -> Self {
         match field.get_field_type() {
             FieldType::LONG => Self::LONG(0),
             FieldType::STRING => Self::STRING([0u8; 32]),
@@ -134,11 +167,11 @@ impl Value {
             FieldType::ULONG => Self::ULONG(0),
             FieldType::SHORT => Self::SHORT(0),
             FieldType::CHAR => Self::CHAR(0),
-            FieldType::STRINGOFF => Self::STRINGOFF(Default::default()),
+            FieldType::STRINGOFF => Self::STRINGOFF((0, String::new())),
             FieldType::NULL => Self::NULL
         }
     }
-
+    #[doc(hidden)]
     pub(crate) fn recalc(&mut self, field: Field) {
         match self {
             Self::LONG(lng) => {
@@ -163,7 +196,7 @@ impl Value {
     /// Reads the value based off row, header, and field info.
     pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian,
         row: i64, header: Header, field: Field) -> BinResult<()> {
-        let oldpos = reader.seek(SeekFrom::Current(0))?;
+        let oldpos = reader.stream_position()?;
         let off = row * header.entrysize as i64 + field.dataoff as i64;
         reader.seek(SeekFrom::Current(off))?;
         match self {
@@ -195,26 +228,21 @@ impl Value {
         self.calc_stringoff(reader, header)?;
         Ok(())
     }
-
+    #[doc(hidden)]
     pub(crate) fn calc_stringoff<R: Read + Seek>(&mut self, reader: &mut R, header: Header) -> BinResult<()> {
         if let Self::STRINGOFF((n, str)) = self {
             let stringoff = header.stringoffset();
             let oldpos = reader.seek(SeekFrom::Current(0))?;
             reader.seek(SeekFrom::Start(stringoff))?;
             reader.seek(SeekFrom::Current(*n as i64))?;
-            let mut bytes = vec![0u8; 0];
-            let mut byte: u8 = reader.read_ne()?;
-            while byte != 0 {
-                bytes.push(byte);
-                byte = reader.read_ne()?;
-            }
-            let (dec, _, _) = SHIFT_JIS.decode(&bytes);
+            let info = binrw::NullString::read_ne(reader)?;
+            let (dec, _, _) = SHIFT_JIS.decode(&info);
             *str = dec.into();
             reader.seek(SeekFrom::Start(oldpos))?;
         }
         Ok(())
     }
-    /// Gets a formatted string based off the Value's inner data.
+    /// Gets a formatted string based off the Value's inner data. Can make signed 16 or 8 bit integers.
     pub fn get_string(&self, signed: bool) -> String {
         match self {
             Self::LONG(l) => {
@@ -263,14 +291,18 @@ impl Value {
 }
 
 #[derive(Clone, Debug, Default)]
+/// The BCSV file format. The struct most users will end up making use of.
 pub struct BCSV {
+    /// The header of the file.
     pub header: Header,
+    /// The fields of the file.
     pub fields: Vec<Field>,
     pub(crate) values: Vec<Value>,
     pub(crate) dictonary: HashMap<Field, Vec<Value>>
 }
 
 impl BCSV {
+    /// Returns a default BCSV.
     pub fn new() -> Self {
         Self::default()
     }
@@ -341,7 +373,7 @@ impl BCSV {
         Ok(())
     }
     /// Sorts the Fields off their order.
-    /// Refer to `FieldType::Order` for more.
+    /// Refer to [`FieldType::order`] for more.
     pub fn sort_fields(&self) -> Vec<Field> {
         let mut result = self.fields.clone();
         result.sort();
@@ -374,12 +406,12 @@ impl BCSV {
         }
         for value in &self.values {
             if let Value::STRINGOFF((off, str)) = value {
-                let curoff = writer.seek(SeekFrom::Current(0))?;
+                let curoff = writer.stream_position()?;
                 let realoff = *off as i64;
                 writer.seek(SeekFrom::Current(realoff))?;
                 let (data, _, _) = SHIFT_JIS.encode(str);
-                writer.write_all(&data)?;
-                writer.write_ne(&0u8)?;
+                let ns = binrw::NullString(data.into());
+                writer.write_ne(&ns)?;
                 writer.seek(SeekFrom::Start(curoff))?;
             }
         }
@@ -390,7 +422,7 @@ impl BCSV {
         writer.write_all(&buffer)?;
         Ok(())
     }
-    /// Alais to `write` using a `Cursor<Vec<u8>>`.
+    /// Alais to [`BCSV::write`] using a [`Cursor<Vec<u8>>`].
     pub fn to_bytes(&self, endian: Endian) -> BinResult<Vec<u8>> {
         let mut stream = Cursor::new(vec![]);
         self.write(&mut stream, endian)?;

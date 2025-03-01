@@ -1,7 +1,15 @@
 [package]
 name = "libbcsv"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
+authors = ["Lord-Giganticus", "The Members of Lord-G-INC"]
+homepage = "https://lordg.org/"
+license = "BSD 3-Clause License"
+description = "A library to parse the BCSV file format."
+repository = "https://github.com/Lord-G-INC/libbcsv"
+readme = "README.md"
+categories = ["game-development", "parsing", "encoding", "filesystem"]
+keywords = ["BCSV", "bcsv", "JMapInfo", "pa", "tbl"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,3 +28,6 @@ crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]
 cxx-build = { version = "1.0.105", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
