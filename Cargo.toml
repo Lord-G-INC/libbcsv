@@ -10,7 +10,10 @@ repository = "https://github.com/Lord-G-INC/libbcsv"
 readme = "README.md"
 categories = ["game-development", "parsing", "encoding", "filesystem"]
 keywords = ["BCSV", "bcsv", "JMapInfo", "pa", "tbl"]
-
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
