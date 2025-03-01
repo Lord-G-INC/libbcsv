@@ -1,6 +1,6 @@
 [package]
 name = "libbcsv"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["Lord-Giganticus", "The Members of Lord-G-INC"]
 homepage = "https://lordg.org/"
