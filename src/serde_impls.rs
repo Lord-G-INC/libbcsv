@@ -118,6 +118,7 @@ impl<'de> Deserialize<'de> for BCSV {
                     Value::STRINGOFF((_, data)) => *data = v.clone(),
                     _ => {}
                 }
+                bcsv.values.push(value.clone());
                 vec.push(value);
             }
             bcsv.dictonary.insert(field, vec);
