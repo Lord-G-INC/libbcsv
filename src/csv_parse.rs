@@ -23,7 +23,8 @@ impl CSV {
     }
     /// Parses a [`CSV`] from the path, using a delimeter to split the text.
     /// Empty values will result in [`Default::default`] being used.
-    pub fn from_path<P: AsRef<Path>>(path: P, delim: char) -> Result<Self, BcsvError> {
+    #[cfg(not(feature = "serde"))]
+    pub fn from_path<P: AsRef<Path>>(path: P, delim: char) -> Result<BCSV, BcsvError> {
         let mut result = Self::default();
         let text = std::fs::read_to_string(path)?.replace('\r', "");
         let lines = text.split('\n').collect::<Vec<_>>();
@@ -104,10 +105,17 @@ impl CSV {
         for (_, vals) in &mut result.dict {
             table.update_offs(vals);
         }
-        Ok(result)
+        Ok(result.create_bcsv())
+    }
+    #[cfg(feature = "serde")]
+    /// Parses a [`CSV`] from the path, using a delimeter to split the text.
+    /// Empty values will result in [`Default::default`] being used.
+    pub fn from_path<P: AsRef<Path>>(path: P, delim: char) -> Result<BCSV, BcsvError> {
+        let text = std::fs::read_to_string(path)?;
+        Ok(BCSV::from_csv_serde(text, delim)?)
     }
     /// Creates a BCSV using the internal info stored
     pub fn create_bcsv(self) -> BCSV {
-        BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict}
+        BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict, ..Default::default()}
     }
 }

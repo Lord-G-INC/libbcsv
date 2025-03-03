@@ -29,7 +29,8 @@ pub fn bcsv_to_csv(path: &CxxString, data: &CxxVector<u8>, endian: u8) -> Unique
     let hashes = hash::read_hashes(path).unwrap_or_default();
     let mut bcsv = types::BCSV::new();
     bcsv.read(&mut reader, endian).unwrap_or_default();
-    let text = bcsv.convert_to_csv(&hashes, true, ',');
+    bcsv.hash_table = hashes;
+    let text = bcsv.convert_to_csv(true, ',');
     let bytes = text.as_bytes();
     let mut result = CxxVector::new();
     let mut pin = result.pin_mut();
@@ -57,8 +58,9 @@ pub fn bcsv_to_xlsx(path: &CxxString, output: &CxxString, data: &CxxVector<u8>, 
     let mut bcsv = types::BCSV::new();
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
+    bcsv.hash_table = hashes;
     let output_path = output.to_string_lossy();
-    bcsv.convert_to_xlsx(output_path, &hashes, true).unwrap_or_default();
+    bcsv.convert_to_xlsx(output_path, true).unwrap_or_default();
 }
 
 /// Converts a CSV to BCSV. Will return a empty std::vector if anything fails.
@@ -72,8 +74,8 @@ pub fn csv_to_bcsv(path: &CxxString, endian: u8) -> UniquePtr<CxxVector<u8>> {
         _ => Endian::NATIVE
     };
     let path = path.to_string_lossy().to_string();
-    let csv = csv_parse::CSV::from_path(path, ',').unwrap_or_default();
-    let data = csv.create_bcsv().to_bytes(endian).unwrap_or_default();
+    let bcsv = csv_parse::CSV::from_path(path, ',').unwrap_or_default();
+    let data = bcsv.to_bytes(endian).unwrap_or_default();
     let mut result = CxxVector::new();
     let mut pin = result.pin_mut();
     for byte in data {

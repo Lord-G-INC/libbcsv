@@ -1,5 +1,6 @@
 use std::{path::Path, collections::HashMap, num::Wrapping};
 /// Preforms an accurate recreation of MR::calcHash from SMG2.
+#[inline]
 pub fn calchash(text: &str) -> u32 {
     let mut output = Wrapping(0u32);
     for char in text.bytes() {

@@ -18,6 +18,7 @@ pub struct Header {
 
 impl Header {
     /// The absolute offset of the string table.
+    #[inline]
     pub const fn stringoffset(&self) -> u64 {
         (self.entrydataoff + (self.entrycount * self.entrysize)) as u64
     }
@@ -46,6 +47,7 @@ pub enum FieldType {
 }
 
 impl From<u8> for FieldType {
+    #[inline]
     fn from(value: u8) -> Self {
         if value > 6 {
             Self::NULL
@@ -57,6 +59,7 @@ impl From<u8> for FieldType {
 
 impl FieldType {
     /// The byte size of the type, [`FieldType::STRINGOFF`] is 4 because it writes a offset to the Values Section.
+    #[inline]
     pub const fn size(&self) -> u16 {
         match self {
             Self::NULL => 0,
@@ -67,6 +70,7 @@ impl FieldType {
         }
     }
     /// The bit mask to use for calculations, only works on the integral types.
+    #[inline]
     pub const fn mask(&self) -> u32 {
         match self {
             Self::NULL | Self::STRING | Self::FLOAT => 0,
@@ -76,6 +80,7 @@ impl FieldType {
         }
     }
     /// The order of which the Field should be written, used in the Ord/PartialOrd impl.
+    #[inline]
     pub const fn order(&self) -> i32 {
         match self {
             Self::NULL => -1,
@@ -107,6 +112,7 @@ pub struct Field {
 
 impl Field {
     /// Gets the [`FieldType`] for this Field
+    #[inline]
     pub const fn get_field_type(&self) -> FieldType {
         if self.datatype > 6 {
             FieldType::NULL
@@ -125,12 +131,14 @@ impl Field {
 }
 
 impl PartialOrd for Field {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.get_field_type().order().partial_cmp(&other.get_field_type().order())
     }
 }
 
 impl Ord for Field {
+    #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.get_field_type().order().cmp(&other.get_field_type().order())
     }
@@ -159,6 +167,7 @@ pub enum Value {
 
 impl Value {
     /// Creates a new Value based off the FieldType of the Field.
+    #[inline]
     pub const fn new(field: Field) -> Self {
         match field.get_field_type() {
             FieldType::LONG => Self::LONG(0),
@@ -297,18 +306,21 @@ pub struct BCSV {
     pub header: Header,
     /// The fields of the file.
     pub fields: Vec<Field>,
+    /// The hash table to use, preferablly loaded by [`hash::read_hashes`].
+    pub hash_table: HashMap<u32, String>,
     pub(crate) values: Vec<Value>,
     pub(crate) dictonary: HashMap<Field, Vec<Value>>
 }
 
 impl BCSV {
     /// Returns a default BCSV.
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
     /// Reads the BCSV info off the reader.
     pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian) -> BinResult<()> {
-        let Self {header, fields, values, dictonary} = self;
+        let Self {header, fields, values, dictonary, ..} = self;
         *header = reader.read_type(endian)?;
         *fields = vec![Field::default(); header.fieldcount as usize];
         for field in fields.iter_mut() {
@@ -337,12 +349,13 @@ impl BCSV {
         Ok(())
     }
     /// Converts all data to readable CSV data.
-    pub fn convert_to_csv(&self, hashes: &HashMap<u32, String>, signed: bool, delim: char) -> String {
+    #[cfg(not(feature = "serde"))]
+    pub fn convert_to_csv(&self, signed: bool, delim: char) -> String {
         let mut result = String::new();
         for i in 0..self.fields.len() {
             let last = i == self.fields.len() - 1;
             let term = match last { true => '\n', false => delim };
-            result += &format!("{}:{}{}", self.fields[i].get_name(hashes), self.fields[i].datatype, term);
+            result += &format!("{}:{}{}", self.fields[i].get_name(&self.hash_table), self.fields[i].datatype, term);
         }
         let mut v = 0;
         while v < self.values.len() {
@@ -355,12 +368,17 @@ impl BCSV {
         }
         result
     }
+    #[cfg(feature = "serde")]
+    /// Converts all data to readable CSV data.
+    pub fn convert_to_csv(&self, signed: bool, delim: char) -> String {
+        self.to_csv_serde(signed, delim).unwrap_or_default()
+    }
     /// Converts all data to a Excel Worksheet.
-    pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, hashes: &HashMap<u32, String>, signed: bool) -> Result<(), BcsvError> {
+    pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, signed: bool) -> Result<(), BcsvError> {
         let book = xlsxwriter::Workbook::new(name.as_ref())?;
         let mut sheet = book.add_worksheet(None)?;
         for i in 0..self.fields.len() {
-            let text = format!("{}:{}", self.fields[i].get_name(hashes), self.fields[i].datatype);
+            let text = format!("{}:{}", self.fields[i].get_name(&self.hash_table), self.fields[i].datatype);
             sheet.write_string(0 as u32, i as u16, &text, None)?;
         }
         for i in 0..self.fields.len() {

@@ -64,7 +64,8 @@ pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *co
     if let Ok(_) = bcsv.read(&mut reader, endian) {
         let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
         let hashes = hash::read_hashes(hash_path).unwrap_or_default();
-        let csv = bcsv.convert_to_csv(&hashes, is_signed, delim as char);
+        bcsv.hash_table = hashes;
+        let csv = bcsv.convert_to_csv(is_signed, delim as char);
         let buffer = ManagedBuffer::new(csv);
         buffer.as_raw()
     } else {
@@ -93,7 +94,8 @@ pub unsafe extern "C" fn bcsv_to_xlsx(hash_path: *const i8, output_path: *const 
     bcsv.read(&mut reader, endian).unwrap_or_default();
     let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
     let hashes = hash::read_hashes(hash_path).unwrap_or_default();
-    bcsv.convert_to_xlsx(CStr::from_ptr(output_path).to_string_lossy(), &hashes, is_signed).unwrap_or_default();
+    bcsv.hash_table = hashes;
+    bcsv.convert_to_xlsx(CStr::from_ptr(output_path).to_string_lossy(), is_signed).unwrap_or_default();
 }
 
 #[no_mangle]
@@ -105,8 +107,8 @@ pub unsafe extern "C" fn csv_to_bcsv(path: *const i8, endian: u8, delim: u8) -> 
         _ => Endian::NATIVE
     };
     let path = CStr::from_ptr(path).to_string_lossy().to_string();
-    let csv = csv_parse::CSV::from_path(path, delim as char).unwrap_or_default();
-    let data = csv.create_bcsv().to_bytes(endian).unwrap_or_default();
+    let bcsv = csv_parse::CSV::from_path(path, delim as char).unwrap_or_default();
+    let data = bcsv.to_bytes(endian).unwrap_or_default();
     let buffer = ManagedBuffer::new(data);
     Arc::into_raw(buffer)
 }

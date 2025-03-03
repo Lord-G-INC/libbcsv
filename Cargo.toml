@@ -1,6 +1,6 @@
 [package]
 name = "libbcsv"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 authors = ["Lord-Giganticus", "The Members of Lord-G-INC"]
 homepage = "https://lordg.org/"
@@ -18,13 +18,17 @@ include = [
 
 [dependencies]
 binrw = "0.11.2"
+csv = { version = "1.3.1", optional = true }
 cxx = { version = "1.0.105", optional = true }
 encoding_rs = "0.8.33"
+serde = { version = "1.0.218", optional = true }
 xlsxwriter = "0.6.0"
 
 [features]
 c_exports = []
 cxx = ["cxx-build", "dep:cxx"]
+serde = ["dep:serde", "csv"]
+csv = ["dep:csv"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]

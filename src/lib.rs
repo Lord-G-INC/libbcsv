@@ -30,3 +30,7 @@ pub mod c_exports;
 #[cfg_attr(doc, doc(cfg(cxx)))]
 /// C++ exported functions of the library.
 pub mod cxx_exports;
+/// [`serde::Serialize`] and [`serde::Deserialize`] implentaions for the crate.
+#[cfg(feature = "serde")]
+#[cfg_attr(doc, doc(cfg(serde)))]
+pub mod serde_impls;
