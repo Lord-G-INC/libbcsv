@@ -1,6 +1,8 @@
-use std::{collections::HashMap, io::{Cursor, Read, Seek, SeekFrom, Write}};
+use std::{collections::*, io::{Cursor, Read, Seek, SeekFrom, Write}, ops::Index};
+use std::collections::hash_map::*;
 
 use crate::*;
+use crate::field_holder::FieldHolder;
 use encoding_rs::SHIFT_JIS;
 
 #[derive(Clone, Copy, Debug, Default, BinRead, BinWrite)]
@@ -24,7 +26,7 @@ impl Header {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 /// The possible types a Field can be. Anything >= 7 is unknown/null.
 pub enum FieldType {
@@ -95,6 +97,19 @@ impl FieldType {
     }
 }
 
+impl PartialOrd for FieldType {
+    #[inline]
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.order().partial_cmp(&other.order())
+    }
+}
+
+impl Ord for FieldType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.order().cmp(&other.order())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, BinRead, BinWrite, Hash, PartialEq, Eq)]
 /// A BCSV Field. Contains information regarding the values owned by this Field.
 pub struct Field {
@@ -128,19 +143,29 @@ impl Field {
             format!("0x{:X}", self.hash)
         }
     }
+    #[inline]
+    pub const fn new_with_type(name: &str, datatype: FieldType) -> Self {
+        let hash = hash::calchash(name);
+        let mask = datatype.mask();
+        Self {hash, mask, dataoff: 0, shift: 0, datatype: datatype as _}
+    }
+    #[inline]
+    pub const fn new(name: &str, mask: u32, shift: u8, datatype: FieldType) -> Self {
+        Self {hash: hash::calchash(name), mask, dataoff: 0, shift, datatype: datatype as _}
+    }
 }
 
 impl PartialOrd for Field {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.get_field_type().order().partial_cmp(&other.get_field_type().order())
+        self.get_field_type().partial_cmp(&other.get_field_type())
     }
 }
 
 impl Ord for Field {
     #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.get_field_type().order().cmp(&other.get_field_type().order())
+        self.get_field_type().cmp(&other.get_field_type())
     }
 }
 
@@ -166,10 +191,10 @@ pub enum Value {
 }
 
 impl Value {
-    /// Creates a new Value based off the FieldType of the Field.
+    /// Creates a new Value based off the FieldType.
     #[inline]
-    pub const fn new(field: Field) -> Self {
-        match field.get_field_type() {
+    pub const fn new(fieldtype: FieldType) -> Self {
+        match fieldtype {
             FieldType::LONG => Self::LONG(0),
             FieldType::STRING => Self::STRING([0u8; 32]),
             FieldType::FLOAT => Self::FLOAT(0.0),
@@ -181,22 +206,23 @@ impl Value {
         }
     }
     #[doc(hidden)]
-    pub(crate) fn recalc(&mut self, field: Field) {
+    #[inline]
+    pub(crate) const fn recalc(&mut self, field: Field) {
         match self {
             Self::LONG(lng) => {
-                *lng &= FieldType::LONG.mask() as i32;
+                *lng &= field.mask as i32;
                 *lng >>= field.shift as i32;
             },
             Self::ULONG(ulng) => {
-                *ulng &= FieldType::ULONG.mask();
+                *ulng &= field.mask;
                 *ulng >>= field.shift as u32;
             },
             Self::SHORT(ust) => {
-                *ust &= FieldType::SHORT.mask() as i16;
+                *ust &= field.mask as i16;
                 *ust >>= field.shift as u16;
             },
             Self::CHAR(b) => {
-                *b &= FieldType::CHAR.mask() as i8;
+                *b &= field.mask as i8;
                 *b >>= field.shift;
             }
             _ => {}
@@ -297,6 +323,42 @@ impl Value {
             Self::NULL => Ok(())
         }
     }
+    #[doc(hidden)]
+    #[inline]
+    pub(crate) const fn calc_write(&mut self, field: Field) {
+        match self {
+            Self::LONG(lng) => {
+                *lng <<= field.shift as i32;
+                *lng &= field.mask as i32;
+            },
+            Self::ULONG(ulng) => {
+                *ulng <<= field.shift;
+                *ulng &= field.mask;
+            },
+            Self::SHORT(sh) => {
+                *sh <<= field.shift as i16;
+                *sh &= field.mask as i16;
+            },
+            Self::CHAR(ch) => {
+                *ch <<= field.shift;
+                *ch &= field.mask as i8;
+            }
+            _ => {}
+        }
+    }
+    #[inline]
+    pub const fn fieldtype(&self) -> FieldType {
+        match self {
+            Self::LONG(_) => FieldType::LONG,
+            Self::CHAR(_) => FieldType::CHAR,
+            Self::FLOAT(_) => FieldType::FLOAT,
+            Self::SHORT(_) => FieldType::SHORT,
+            Self::STRING(_) => FieldType::STRING,
+            Self::STRINGOFF(_) => FieldType::STRINGOFF,
+            Self::ULONG(_) => FieldType::ULONG,
+            _ => FieldType::NULL
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -304,12 +366,12 @@ impl Value {
 pub struct BCSV {
     /// The header of the file.
     pub header: Header,
-    /// The fields of the file.
-    pub fields: Vec<Field>,
     /// The hash table to use, preferablly loaded by [`hash::read_hashes`].
     pub hash_table: HashMap<u32, String>,
-    pub(crate) values: Vec<Value>,
-    pub(crate) dictonary: HashMap<Field, Vec<Value>>
+    /// The fields of the BCSV.
+    pub fields: Vec<Field>,
+    /// The fields and values of the BCSV.
+    pub values: HashMap<Field, Vec<Value>>
 }
 
 impl BCSV {
@@ -320,28 +382,27 @@ impl BCSV {
     }
     /// Reads the BCSV info off the reader.
     pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian) -> BinResult<()> {
-        let Self {header, fields, values, dictonary, ..} = self;
+        let Self {header, values, fields, ..} = self;
         *header = reader.read_type(endian)?;
-        *fields = vec![Field::default(); header.fieldcount as usize];
-        for field in fields.iter_mut() {
-            *field = reader.read_type(endian)?;
-            dictonary.insert(*field, vec![]);
+        fields.reserve_exact(header.fieldcount as _);
+        values.reserve(header.fieldcount as _);
+        for _ in 0..header.fieldcount as usize {
+            let field = reader.read_type(endian)?;
+            fields.push(field);
+            values.insert(field, Vec::with_capacity(header.entrycount as _));
         }
         reader.seek(SeekFrom::Start(header.entrydataoff as u64))?;
-        let entrysize = header.entrycount as usize * fields.len();
+        let entrysize = header.entrycount as usize * values.len();
         let mut v = 0;
         let mut row = 0;
         while v != entrysize {
             if v >= entrysize {
                 break;
             }
-            for field in fields.iter() {
-                let mut value = Value::new(*field);
+            for (field, values) in values.iter_mut() {
+                let mut value = Value::new(field.get_field_type());
                 value.read(reader, endian, row, *header, *field)?;
-                values.push(value.clone());
-                if let Some(entries) = dictonary.get_mut(field) {
-                    entries.push(value);
-                }
+                values.push(value);
                 v += 1;
             }
             row += 1;
@@ -352,19 +413,19 @@ impl BCSV {
     #[cfg(not(feature = "serde"))]
     pub fn convert_to_csv(&self, signed: bool, delim: char) -> String {
         let mut result = String::new();
-        for i in 0..self.fields.len() {
-            let last = i == self.fields.len() - 1;
+        let mut i = 0;
+        for (field, _) in &self.values {
+            let last = i == self.values.len() - 1;
             let term = match last { true => '\n', false => delim };
-            result += &format!("{}:{}{}", self.fields[i].get_name(&self.hash_table), self.fields[i].datatype, term);
+            result += &format!("{}:{}{}", field.get_name(&self.hash_table), field.datatype, term);
         }
-        let mut v = 0;
-        while v < self.values.len() {
-            for i in 0..self.fields.len() {
-                let last = i == self.fields.len() - 1;
-                let term = match last { false => delim, true => '\n' };
-                result += &format!("{}{}", self.values[v].get_string(signed), term);
-                v += 1;
-            }
+        i = 0;
+        for (_, values) in &self.values {
+            let last = i == values.len() - 1;
+            let term = match last { true => '\n', false => delim };
+            result += &format!("{}{}", values[i].get_string(signed), term);
+            i += 1;
+            if last { i = 0; }
         }
         result
     }
@@ -377,15 +438,19 @@ impl BCSV {
     pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, signed: bool) -> Result<(), BcsvError> {
         let book = xlsxwriter::Workbook::new(name.as_ref())?;
         let mut sheet = book.add_worksheet(None)?;
-        for i in 0..self.fields.len() {
-            let text = format!("{}:{}", self.fields[i].get_name(&self.hash_table), self.fields[i].datatype);
+        let mut i = 0;
+        for field in &self.fields {
+            let text = format!("{}:{}", field.get_name(&self.hash_table), field.datatype);
             sheet.write_string(0 as u32, i as u16, &text, None)?;
+            i += 1;
         }
-        for i in 0..self.fields.len() {
-            let values = &self.dictonary[&self.fields[i]];
+        i = 0;
+        for (field, _) in &self.values {
+            let values = &self.values[field];
             for j in 0..values.len() {
                 sheet.write_string((j + 1) as u32, i as u16, &values[j].get_string(signed), None)?;
             }
+            i += 1;
         }
         book.close()?;
         Ok(())
@@ -409,8 +474,9 @@ impl BCSV {
         let sorted = self.sort_fields();
         for i in 0..self.header.entrycount as usize {
             for f in &sorted {
-                if let Some(entries) = self.dictonary.get(f) {
-                    let val = &entries[i];
+                if let Some(entries) = self.values.get(f) {
+                    let mut val = entries[i].clone();
+                    val.calc_write(*f);
                     val.write(writer, endian)?;
                 }
             }
@@ -422,7 +488,7 @@ impl BCSV {
             std::io::ErrorKind::UnexpectedEof, "End and StrOff don't match");
            return Err(ioerr.into())
         }
-        for value in &self.values {
+        for value in self.values.values().flatten() {
             if let Value::STRINGOFF((off, str)) = value {
                 let curoff = writer.stream_position()?;
                 let realoff = *off as i64;
@@ -445,5 +511,65 @@ impl BCSV {
         let mut stream = Cursor::new(vec![]);
         self.write(&mut stream, endian)?;
         Ok(stream.into_inner())
+    }
+    /// Creates a new field for the BCSV. Also creates a new entry in the dictonary.
+    #[inline]
+    pub fn new_field(&mut self, field: Field) {
+        let ft = field.get_field_type();
+        self.fields.push(field);
+        self.values.insert(field, vec![Value::new(ft); self.header.entrycount as _]);
+    }
+    /// Attempts to find the values owned by this field. Refer to [`HashMap::get_mut`] for more.
+    #[inline]
+    pub fn get_values(&mut self, field: Field) -> Option<&mut Vec<Value>> {
+        self.values.get_mut(&field)
+    }
+    /// Adds a new value to the BCSV using the field as the info of where it belongs.
+    /// If value's datatype doesn't match field's datatype nothing will happen.
+    /// This method will also do nothing if it cannot find the field within the dictonary.
+    /// Fields should always be added via [`BCSV::new_field`].
+    #[inline]
+    pub fn add_value(&mut self, field: Field, value: Value) {
+        if field.get_field_type() != value.fieldtype() {return;}
+        if let Some(values) = self.values.get_mut(&field) {
+            values.push(value);
+        }
+    }
+    #[inline]
+    pub fn field_holder<'a>(&'a mut self, index: usize) -> FieldHolder<'a> {
+        FieldHolder::from_bcsv(self, index)
+    }
+}
+
+impl IntoIterator for BCSV {
+    type IntoIter = IntoIter<Field, Vec<Value>>;
+    type Item = (Field, Vec<Value>);
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a BCSV {
+    type IntoIter = Iter<'a, Field, Vec<Value>>;
+    type Item = (&'a Field, &'a Vec<Value>);
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut BCSV {
+    type IntoIter = IterMut<'a, Field, Vec<Value>>;
+    type Item = (&'a Field, &'a mut Vec<Value>);
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter_mut()
+    }
+}
+
+impl Index<Field> for BCSV {
+    type Output = Vec<Value>;
+    #[inline]
+    fn index(&self, index: Field) -> &Self::Output {
+        &self.values.index(&index)
     }
 }

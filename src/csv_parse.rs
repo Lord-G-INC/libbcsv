@@ -8,16 +8,18 @@ pub struct CSV {
     /// The BCSV header calculated from the CSV.
     pub header: Header,
     /// The fields calculated from the CSV.
+    #[cfg(not(feature = "serde"))]
     pub fields: Vec<Field>,
-    pub(crate) entries: Vec<Value>,
-    pub(crate) dict: HashMap<Field, Vec<Value>>
+    /// The values calculated from the CSV.
+    pub dict: HashMap<Field, Vec<Value>>
 }
 
 impl CSV {
     /// Produces a [`Vec`] of Fields Sorted by their [`FieldType`]'s order.
     /// Refer to [`FieldType::order`] for more.
+    #[cfg(not(feature = "serde"))]
     pub fn get_sorted_fields(&self) -> Vec<Field> {
-        let mut fields = self.fields.clone();
+        let mut fields = self.dict.keys().map(|x| *x).collect::<Vec<_>>();
         fields.sort();
         fields
     }
@@ -51,7 +53,7 @@ impl CSV {
                 for j in 0..info.len() {
                     let v = info[j];
                     let field = result.fields[j];
-                    let mut value = Value::new(field);
+                    let mut value = Value::new(field.get_field_type());
                     match &mut value {
                         Value::LONG(l) => {
                             *l = v.parse().unwrap_or_default();
@@ -76,7 +78,6 @@ impl CSV {
                         },
                         Value::NULL => {}
                     }
-                    result.entries.push(value.clone());
                     if let Some(vec) = result.dict.get_mut(&field) {
                         vec.push(value);
                     }
@@ -101,7 +102,6 @@ impl CSV {
         result.header.entrysize = doff as _;
         result.header.entrydataoff = 16 + (12 * result.header.fieldcount);
         let mut table = string_table::StringTable::new();
-        table.update_offs(&mut result.entries);
         for (_, vals) in &mut result.dict {
             table.update_offs(vals);
         }
@@ -116,6 +116,6 @@ impl CSV {
     }
     /// Creates a BCSV using the internal info stored
     pub fn create_bcsv(self) -> BCSV {
-        BCSV {header: self.header, fields: self.fields, values: self.entries, dictonary: self.dict, ..Default::default()}
+        BCSV {header: self.header, values: self.dict, ..Default::default()}
     }
 }

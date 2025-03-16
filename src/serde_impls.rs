@@ -61,8 +61,8 @@ impl Serialize for BCSV {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer {
-        let mut map = serializer.serialize_map(Some(self.dictonary.len()))?;
-        for (k, value) in &self.dictonary {
+        let mut map = serializer.serialize_map(Some(self.values.len()))?;
+        for (k, value) in &self.values {
             let key = format!("{}:{}:{}:{:?}", k.get_name(&self.hash_table), k.mask, k.shift,
                 k.get_field_type());
             map.serialize_entry(&key, value)?;
@@ -104,10 +104,9 @@ impl<'de> Deserialize<'de> for BCSV {
             let shift: u8 = split[2].parse().unwrap_or_default();
             let datatype = str_to_field_type(split[3]) as u8;
             let field = Field { hash, mask, dataoff: 0, shift, datatype };
-            bcsv.fields.push(field);
             let mut vec = Vec::with_capacity(vaules.len());
             for v in vaules {
-                let mut value = Value::new(field);
+                let mut value = Value::new(field.get_field_type());
                 match &mut value {
                     Value::LONG(l) => *l = v.parse().unwrap_or_default(),
                     Value::STRING(st) => *st = v.as_bytes().try_into().unwrap_or_default(),
@@ -118,31 +117,30 @@ impl<'de> Deserialize<'de> for BCSV {
                     Value::STRINGOFF((_, data)) => *data = v.clone(),
                     _ => {}
                 }
-                bcsv.values.push(value.clone());
                 vec.push(value);
             }
-            bcsv.dictonary.insert(field, vec);
+            bcsv.fields.push(field);
+            bcsv.values.insert(field, vec);
         }
-        bcsv.header.fieldcount = bcsv.fields.len() as _;
+        bcsv.header.fieldcount = bcsv.values.len() as _;
         let mut doff = 0;
         let sorted = bcsv.sort_fields();
         for f in sorted {
             if let Some(og) = bcsv.fields.iter_mut().find(|x| x.hash == f.hash) {
-                if let Some(values) = bcsv.dictonary.remove(og) {
+                if let Some(values) = bcsv.values.remove(og) {
                     if bcsv.header.entrycount == 0 {
                         bcsv.header.entrycount = values.len() as _;
                     }
                     og.dataoff = doff;
                     doff += og.get_field_type().size();
-                    bcsv.dictonary.insert(*og, values);
+                    bcsv.values.insert(*og, values);
                 }
             }
         }
         bcsv.header.entrysize = doff as _;
         bcsv.header.entrydataoff = 16 + (12 * bcsv.header.fieldcount);
         let mut table = string_table::StringTable::new();
-        table.update_offs(&mut bcsv.values);
-        for (_, vals) in &mut bcsv.dictonary {
+        for (_, vals) in &mut bcsv.values {
             table.update_offs(vals);
         }
         Ok(bcsv)
@@ -162,11 +160,9 @@ impl BCSV {
         let fields = self.fields.iter()
         .map(|x| format_field(*x, self)).collect::<Vec<_>>();
         writer.write_record(fields)?;
-        let mut i = 0;
-        for _ in 0..self.header.entrycount {
-            for _ in 0..self.fields.len() {
-                writer.write_field(self.values[i].get_string(signed))?;
-                i += 1;
+        for (_, values) in &self.values {
+            for value in values {
+                writer.write_field(value.get_string(signed))?;
             }
             writer.write_record(None::<&[u8]>)?;
         }
@@ -194,17 +190,17 @@ impl BCSV {
             let datatype = str_to_field_type(split[3]) as u8;
             let field = Field { hash, mask, dataoff: 0, shift, datatype };
             bcsv.fields.push(field);
-            bcsv.dictonary.insert(field, vec![]);
+            bcsv.values.insert(field, vec![]);
         }
         let items = reader.records().collect::<Vec<_>>();
         for i in 0..items.len() {
             let record = &items[i];
             match record.as_ref() {
                 Ok(record) => {
-                    for j in 0..bcsv.fields.len() {
+                    let mut j = 0;
+                    for (field, values) in &mut bcsv.values {
                         let item = &record[j];
-                        let field = &bcsv.fields[j];
-                        let mut value = Value::new(*field);
+                        let mut value = Value::new(field.get_field_type());
                         match &mut value {
                             Value::LONG(l) => *l = item.parse().unwrap_or_default(),
                             Value::STRING(st) => *st = item.as_bytes().try_into().unwrap_or_default(),
@@ -215,35 +211,32 @@ impl BCSV {
                             Value::STRINGOFF((_, s)) => *s = item.into(),
                             _ => {}
                         }
-                        bcsv.values.push(value.clone());
-                        if let Some(entries) = bcsv.dictonary.get_mut(field) {
-                            entries.push(value);
-                        }
+                        values.push(value);
+                        j += 1;
                     }
                 },
                 Err(e) => return Err(csv::Error::custom(e))
             }
         }
-        bcsv.header.fieldcount = bcsv.fields.len() as _;
+        bcsv.header.fieldcount = bcsv.values.len() as _;
         let mut doff = 0;
         let sorted = bcsv.sort_fields();
         for f in sorted {
             if let Some(og) = bcsv.fields.iter_mut().find(|x| x.hash == f.hash) {
-                if let Some(values) = bcsv.dictonary.remove(og) {
+                if let Some(values) = bcsv.values.remove(og) {
                     if bcsv.header.entrycount == 0 {
                         bcsv.header.entrycount = values.len() as _;
                     }
                     og.dataoff = doff;
                     doff += og.get_field_type().size();
-                    bcsv.dictonary.insert(*og, values);
+                    bcsv.values.insert(*og, values);
                 }
             }
         }
         bcsv.header.entrysize = doff as _;
         bcsv.header.entrydataoff = 16 + (12 * bcsv.header.fieldcount);
         let mut table = string_table::StringTable::new();
-        table.update_offs(&mut bcsv.values);
-        for (_, vals) in &mut bcsv.dictonary {
+        for (_, vals) in &mut bcsv.values {
             table.update_offs(vals);
         }
         Ok(bcsv)

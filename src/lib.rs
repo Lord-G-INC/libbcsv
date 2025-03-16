@@ -14,6 +14,8 @@ pub mod types;
 pub mod csv_parse;
 /// The module to handle the BCSV string table.
 pub mod string_table;
+/// A module to handle holding BCSV fields and their info.
+pub mod field_holder;
 pub type BcsvError = Box<dyn Error>;
 pub use binrw::Endian;
 pub use binrw;
