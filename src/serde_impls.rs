@@ -52,8 +52,16 @@ impl Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: Serializer {
-        let info = self.get_string(true);
-        info.serialize(serializer)
+        match self {
+            Value::LONG(l) => serializer.serialize_i32(*l),
+            Value::STRING(st) => serializer.serialize_str(&String::from(String::from_utf8_lossy(st))),
+            Value::FLOAT(f) => serializer.serialize_f32(*f),
+            Value::ULONG(ul) => serializer.serialize_u32(*ul),
+            Value::SHORT(sh) => serializer.serialize_i16(*sh),
+            Value::CHAR(ch) => serializer.serialize_i8(*ch),
+            Value::STRINGOFF((_, s)) => serializer.serialize_str(s),
+            _ => serializer.serialize_str("None")
+        }
     }
 }
 
@@ -160,8 +168,11 @@ impl BCSV {
         let fields = self.fields.iter()
         .map(|x| format_field(*x, self)).collect::<Vec<_>>();
         writer.write_record(fields)?;
-        for (_, values) in &self.values {
-            for value in values {
+        for i in 0..self.header.entrycount {
+            for j in 0..self.fields.len() {
+                let f = self.fields[j];
+                let vals = &self.values[&f];
+                let value = &vals[i as usize];
                 writer.write_field(value.get_string(signed))?;
             }
             writer.write_record(None::<&[u8]>)?;
