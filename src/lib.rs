@@ -16,12 +16,13 @@ pub mod csv_parse;
 pub mod string_table;
 /// A module to handle holding BCSV fields and their info.
 pub mod field_holder;
-pub type BcsvError = Box<dyn Error>;
+/// Error Types
+pub mod error;
+pub use error::BCSVError as BcsvError;
 pub use binrw::Endian;
 pub use binrw;
 // Crate only exports
 use binrw::prelude::*;
-use std::error::Error;
 // Feature only mods
 
 #[cfg(feature = "c_exports")]

@@ -30,7 +30,7 @@ pub fn bcsv_to_csv(path: &CxxString, data: &CxxVector<u8>, endian: u8) -> Unique
     let mut bcsv = types::BCSV::new();
     bcsv.read(&mut reader, endian).unwrap_or_default();
     bcsv.hash_table = hashes;
-    let text = bcsv.convert_to_csv(true, ',');
+    let text = bcsv.convert_to_csv(true, ',').unwrap_or_default();
     let bytes = text.as_bytes();
     let mut result = CxxVector::new();
     let mut pin = result.pin_mut();

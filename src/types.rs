@@ -411,19 +411,19 @@ impl BCSV {
     }
     /// Converts all data to readable CSV data.
     #[cfg(not(feature = "serde"))]
-    pub fn convert_to_csv(&self, signed: bool, delim: char) -> String {
+    pub fn convert_to_csv(&self, signed: bool, delim: char) -> Result<String, BcsvError> {
         let mut result = String::new();
         let mut i = 0;
         for (field, _) in &self.values {
             let last = i == self.values.len() - 1;
             let term = match last { true => '\n', false => delim };
-            result += &format!("{}:{}{}", field.get_name(&self.hash_table), field.datatype, term);
+            write!(&mut result, "{}:{}{}", field.get_name(&self.hash_table), field.datatype, term)?;
         }
         i = 0;
         for (_, values) in &self.values {
             let last = i == values.len() - 1;
             let term = match last { true => '\n', false => delim };
-            result += &format!("{}{}", values[i].get_string(signed), term);
+            write!(&mut result, "{}{}", values[i].get_string(signed), term)?;
             i += 1;
             if last { i = 0; }
         }
@@ -431,8 +431,8 @@ impl BCSV {
     }
     #[cfg(feature = "serde")]
     /// Converts all data to readable CSV data.
-    pub fn convert_to_csv(&self, signed: bool, delim: char) -> String {
-        self.to_csv_serde(signed, delim).unwrap_or_default()
+    pub fn convert_to_csv(&self, signed: bool, delim: char) -> Result<String, BcsvError> {
+        Ok(self.to_csv_serde(signed, delim)?)
     }
     /// Converts all data to a Excel Worksheet.
     pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, signed: bool) -> Result<(), BcsvError> {

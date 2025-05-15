@@ -65,7 +65,7 @@ pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *co
         let hash_path = CStr::from_ptr(hash_path).to_string_lossy().into_owned();
         let hashes = hash::read_hashes(hash_path).unwrap_or_default();
         bcsv.hash_table = hashes;
-        let csv = bcsv.convert_to_csv(is_signed, delim as char);
+        let csv = bcsv.convert_to_csv(is_signed, delim as char).unwrap_or_default();
         let buffer = ManagedBuffer::new(csv);
         buffer.as_raw()
     } else {
