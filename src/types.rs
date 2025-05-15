@@ -412,6 +412,7 @@ impl BCSV {
     /// Converts all data to readable CSV data.
     #[cfg(not(feature = "serde"))]
     pub fn convert_to_csv(&self, signed: bool, delim: char) -> Result<String, BcsvError> {
+        use std::fmt::Write;
         let mut result = String::new();
         let mut i = 0;
         for (field, _) in &self.values {
@@ -427,7 +428,7 @@ impl BCSV {
             i += 1;
             if last { i = 0; }
         }
-        result
+        Ok(result)
     }
     #[cfg(feature = "serde")]
     /// Converts all data to readable CSV data.

@@ -5,6 +5,7 @@ use csv::Error as CsvError;
 use xlsxwriter::XlsxError;
 use std::fmt::Display;
 use std::fmt::Error as FmtError;
+use std::num::ParseIntError;
 
 #[derive(Debug)]
 pub enum BCSVError {
@@ -13,6 +14,7 @@ pub enum BCSVError {
     CSVError(CsvError),
     XLSXError(XlsxError),
     FmtError(FmtError),
+    ParseIntError(ParseIntError),
     Other(Box<dyn Error>)
 }
 
@@ -58,6 +60,12 @@ impl From<FmtError> for BCSVError {
     }
 }
 
+impl From<ParseIntError> for BCSVError {
+    fn from(value: ParseIntError) -> Self {
+        Self::ParseIntError(value)
+    }
+}
+
 impl Display for BCSVError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -66,7 +74,8 @@ impl Display for BCSVError {
             Self::CSVError(csv) => Display::fmt(csv, f),
             Self::Other(oth) => Display::fmt(oth, f),
             Self::XLSXError(xlsx) => Display::fmt(xlsx, f),
-            Self::FmtError(fmt) => Display::fmt(fmt, f)
+            Self::FmtError(fmt) => Display::fmt(fmt, f),
+            Self::ParseIntError(pie) => Display::fmt(pie, f)
         }
     }
 }
