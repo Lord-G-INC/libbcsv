@@ -82,6 +82,7 @@ pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *co
 /// * `len`: The length of the raw data.
 /// * `is_signed` - Makes [`Value::SHORT`] and [`Value::CHAR`] print in signed form.
 /// * `endian` - The endian to use. 0 is Big, 1 is Little. Anything else will resolve to [`Endian::NATIVE`].
+#[cfg(not(target_arch = "wasm32"))]
 pub unsafe extern "C" fn bcsv_to_xlsx(hash_path: *const i8, output_path: *const i8, data: *const u8, len: usize, is_signed: bool, endian: u8) {
     let buffer = std::slice::from_raw_parts(data, len).to_vec();
     let endian = match endian {

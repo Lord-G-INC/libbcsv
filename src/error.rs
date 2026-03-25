@@ -2,6 +2,7 @@ use binrw::Error as BrwError;
 use std::error::Error;
 #[cfg(feature = "serde")]
 use csv::Error as CsvError;
+#[cfg(not(target_arch = "wasm32"))]
 use xlsxwriter::XlsxError;
 use std::fmt::Display;
 use std::fmt::Error as FmtError;
@@ -12,6 +13,7 @@ pub enum BCSVError {
     BrwError(BrwError),
     #[cfg(feature = "serde")]
     CSVError(CsvError),
+    #[cfg(not(target_arch = "wasm32"))]
     XLSXError(XlsxError),
     FmtError(FmtError),
     ParseIntError(ParseIntError),
@@ -42,6 +44,7 @@ impl From<&'static dyn Error> for BCSVError {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<XlsxError> for BCSVError {
     fn from(value: XlsxError) -> Self {
         Self::XLSXError(value)
@@ -73,6 +76,7 @@ impl Display for BCSVError {
             #[cfg(feature = "serde")]
             Self::CSVError(csv) => Display::fmt(csv, f),
             Self::Other(oth) => Display::fmt(oth, f),
+            #[cfg(not(target_arch = "wasm32"))]
             Self::XLSXError(xlsx) => Display::fmt(xlsx, f),
             Self::FmtError(fmt) => Display::fmt(fmt, f),
             Self::ParseIntError(pie) => Display::fmt(pie, f)

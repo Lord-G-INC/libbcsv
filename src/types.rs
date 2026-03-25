@@ -229,11 +229,7 @@ impl Value {
         }
     }
     /// Reads the value based off row, header, and field info.
-    pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian,
-        row: i64, header: Header, field: Field) -> BinResult<()> {
-        let oldpos = reader.stream_position()?;
-        let off = row * header.entrysize as i64 + field.dataoff as i64;
-        reader.seek(SeekFrom::Current(off))?;
+    pub fn read<R: Read + Seek>(&mut self, reader: &mut R, endian: Endian, header: Header, field: Field) -> BinResult<()> {
         match self {
             Self::LONG(l) => {
                 *l = reader.read_type(endian)?;
@@ -258,7 +254,6 @@ impl Value {
             }
             Self::NULL => {},
         }
-        reader.seek(SeekFrom::Start(oldpos))?;
         self.recalc(field);
         self.calc_stringoff(reader, header)?;
         Ok(())
@@ -392,20 +387,16 @@ impl BCSV {
             values.insert(field, Vec::with_capacity(header.entrycount as _));
         }
         reader.seek(SeekFrom::Start(header.entrydataoff as u64))?;
-        let entrysize = header.entrycount as usize * values.len();
-        let mut v = 0;
-        let mut row = 0;
-        while v != entrysize {
-            if v >= entrysize {
-                break;
+        let mut sorted = fields.clone();
+        sorted.sort_by(|x, y| x.dataoff.cmp(&y.dataoff));
+        for _ in 0..header.entrycount {
+            for f in &sorted {
+                let mut value = Value::new(f.get_field_type());
+                value.read(reader, endian, *header, *f)?;
+                if let Some(values) = values.get_mut(f) {
+                    values.push(value);
+                }
             }
-            for (field, values) in values.iter_mut() {
-                let mut value = Value::new(field.get_field_type());
-                value.read(reader, endian, row, *header, *field)?;
-                values.push(value);
-                v += 1;
-            }
-            row += 1;
         }
         Ok(())
     }
@@ -436,6 +427,7 @@ impl BCSV {
         Ok(self.to_csv_serde(signed, delim)?)
     }
     /// Converts all data to a Excel Worksheet.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn convert_to_xlsx<S: AsRef<str>>(&self, name: S, signed: bool) -> Result<(), BcsvError> {
         let book = xlsxwriter::Workbook::new(name.as_ref())?;
         let mut sheet = book.add_worksheet(None)?;
@@ -515,10 +507,12 @@ impl BCSV {
     }
     /// Creates a new field for the BCSV. Also creates a new entry in the dictonary.
     #[inline]
-    pub fn new_field(&mut self, field: Field) {
+    #[must_use]
+    pub fn new_field<'a>(&'a mut self, field: Field) -> FieldHolder<'a> {
         let ft = field.get_field_type();
         self.fields.push(field);
         self.values.insert(field, vec![Value::new(ft); self.header.entrycount as _]);
+        self.field_holder(self.fields.len() - 1)
     }
     /// Attempts to find the values owned by this field. Refer to [`HashMap::get_mut`] for more.
     #[inline]
@@ -537,6 +531,7 @@ impl BCSV {
         }
     }
     #[inline]
+    #[must_use]
     pub fn field_holder<'a>(&'a mut self, index: usize) -> FieldHolder<'a> {
         FieldHolder::from_bcsv(self, index)
     }

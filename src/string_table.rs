@@ -42,8 +42,8 @@ impl StringTable {
     #[inline]
     pub fn update_offs(&mut self, entries: &mut Vec<types::Value>) {
         for entry in entries {
-            if let types::Value::STRINGOFF((off, str)) = entry {
-                self.push(&str);
+            if let types::Value::STRINGOFF((off, ref str)) = entry {
+                self.push(str);
                 if let Some(o) = self.find(str) {
                     *off = *o;
                 }

@@ -1,6 +1,7 @@
 use std::ops::{Deref, DerefMut, Drop};
 
 use crate::types::*;
+use crate::string_table::StringTable;
 
 #[derive(Debug)]
 pub struct FieldHolder<'a> {
@@ -29,7 +30,7 @@ impl<'a> FieldHolder<'a> {
     }
     #[inline]
     pub fn values(&mut self) -> Option<&mut Vec<Value>> {
-        self.bcsv.values.get_mut(&self.field())
+        self.bcsv.values.get_mut(&self.original)
     }
     /// Creates a new value based off the held field's datatype.
     #[inline]
@@ -67,6 +68,33 @@ impl<'a> Drop for FieldHolder<'a> {
         let new = self.field();
         if let Some(values) = self.bcsv.values.remove(&og) {
             self.bcsv.values.insert(new, values);
+        }
+        self.bcsv.recalculate();
+    }
+}
+
+impl BCSV {
+    pub fn recalculate(&mut self) {
+        self.header.fieldcount = self.values.len() as _;
+        let sorted = self.sort_fields();
+        let mut doff = 0;
+        for f in sorted {
+            if let Some(og) = self.fields.iter_mut().find(|x| x.hash == f.hash) {
+                if let Some(values) = self.values.remove(og) {
+                    if self.header.entrycount != values.len() as _ {
+                        self.header.entrycount = values.len() as _;
+                    }
+                    og.dataoff = doff;
+                    doff += og.get_field_type().size();
+                    self.values.insert(*og, values);
+                }
+            }
+        }
+        self.header.entrysize = doff as _;
+        self.header.entrydataoff = 16 + (12 * self.header.fieldcount);
+        let mut table = StringTable::new();
+        for (_, values) in &mut self.values {
+            table.update_offs(values);
         }
     }
 }

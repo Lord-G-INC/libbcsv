@@ -130,27 +130,7 @@ impl<'de> Deserialize<'de> for BCSV {
             bcsv.fields.push(field);
             bcsv.values.insert(field, vec);
         }
-        bcsv.header.fieldcount = bcsv.values.len() as _;
-        let mut doff = 0;
-        let sorted = bcsv.sort_fields();
-        for f in sorted {
-            if let Some(og) = bcsv.fields.iter_mut().find(|x| x.hash == f.hash) {
-                if let Some(values) = bcsv.values.remove(og) {
-                    if bcsv.header.entrycount == 0 {
-                        bcsv.header.entrycount = values.len() as _;
-                    }
-                    og.dataoff = doff;
-                    doff += og.get_field_type().size();
-                    bcsv.values.insert(*og, values);
-                }
-            }
-        }
-        bcsv.header.entrysize = doff as _;
-        bcsv.header.entrydataoff = 16 + (12 * bcsv.header.fieldcount);
-        let mut table = string_table::StringTable::new();
-        for (_, vals) in &mut bcsv.values {
-            table.update_offs(vals);
-        }
+        bcsv.recalculate();
         Ok(bcsv)
     }
 }
@@ -194,7 +174,7 @@ impl BCSV {
             if !name.starts_with("0x") {
                 hash = hash::calchash(name);
             } else {
-                hash = u32::from_str_radix(&name[2..], 16).unwrap_or_default()
+                hash = u32::from_str_radix(&name[2..], 16).unwrap_or_default();
             }
             let mask: u32 = split[1].parse().unwrap_or_default();
             let shift: u8 = split[2].parse().unwrap_or_default();
@@ -229,27 +209,7 @@ impl BCSV {
                 Err(e) => return Err(csv::Error::custom(e))
             }
         }
-        bcsv.header.fieldcount = bcsv.values.len() as _;
-        let mut doff = 0;
-        let sorted = bcsv.sort_fields();
-        for f in sorted {
-            if let Some(og) = bcsv.fields.iter_mut().find(|x| x.hash == f.hash) {
-                if let Some(values) = bcsv.values.remove(og) {
-                    if bcsv.header.entrycount == 0 {
-                        bcsv.header.entrycount = values.len() as _;
-                    }
-                    og.dataoff = doff;
-                    doff += og.get_field_type().size();
-                    bcsv.values.insert(*og, values);
-                }
-            }
-        }
-        bcsv.header.entrysize = doff as _;
-        bcsv.header.entrydataoff = 16 + (12 * bcsv.header.fieldcount);
-        let mut table = string_table::StringTable::new();
-        for (_, vals) in &mut bcsv.values {
-            table.update_offs(vals);
-        }
+        bcsv.recalculate();
         Ok(bcsv)
     }
 }

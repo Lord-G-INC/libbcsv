@@ -25,6 +25,9 @@ pub use binrw;
 use binrw::prelude::*;
 // Feature only mods
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_exports;
+
 #[cfg(feature = "c_exports")]
 #[cfg_attr(doc, doc(cfg(c_exports)))]
 /// C exported functions of the library.
