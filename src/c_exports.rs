@@ -1,37 +1,37 @@
 use std::slice;
 use std::ptr;
-use std::sync::Arc;
+use std::mem::*;
 use std::{ffi::*, io::Cursor};
 use crate::*;
 use crate::types::*;
 
-#[repr(C)]
-/// A managed buffer for a C caller to use in a *read-only* context. For methods in this module that return a `*const ManagedBuffer`,
+
+/// A managed buffer for a C caller to use in a *read-only* context. For methods in this module that return a `ManagedBuffer`,
 /// ***IT MUST BE FREED USING [`free_managed_buffer`]!***
+#[repr(C)]
 pub struct ManagedBuffer {
     buffer: *mut u8,
-    len: usize
+    len: usize,
+    capacity: usize
 }
 
 impl ManagedBuffer {
-    /// Creates a new buffer from the byte data, uses a [`Arc<Self>`] to manage passing the pointer through FFI.
-    pub fn new<A: AsRef<[u8]>>(item: A) -> Arc<Self> {
-        let boxed = item.as_ref().to_vec().into_boxed_slice();
-        let len = boxed.len();
-        let buffer = Box::into_raw(boxed).cast();
-        Arc::new( Self { buffer, len })
-    }
-    /// Alais to [`Arc::into_raw`].
-    #[must_use]
-    pub fn as_raw(self: Arc<Self>) -> *const Self {
-        Arc::into_raw(self)
+    /// Creates a new buffer from the byte data.
+    pub fn new<A: AsRef<[u8]>>(item: A) -> Self {
+        let vec = item.as_ref().to_vec();
+        let mut me = ManuallyDrop::new(vec);
+        let buffer = me.as_mut_ptr();
+        let len = me.len();
+        let capacity = me.capacity();
+        Self { buffer, len, capacity }
     }
 }
 
 impl Drop for ManagedBuffer {
     fn drop(&mut self) {
+        let Self {buffer, len, capacity} = *self;
         unsafe {
-            drop(Box::from_raw(slice::from_raw_parts_mut(self.buffer, self.len)))
+            drop(Vec::from_raw_parts(buffer,len, capacity))
         }
     }
 }
@@ -39,9 +39,8 @@ impl Drop for ManagedBuffer {
 #[no_mangle]
 /// Reclaims the buffer pointer from FFI and drops it. 
 /// ***MUST BE USED TO FREE ANY [`ManagedBuffer`] POINTERS RETURNED BY THIS MODULE***
-pub unsafe extern "C" fn free_managed_buffer(buffer: *const ManagedBuffer) {
-    if buffer.is_null() {return;}
-    drop(Arc::from_raw(buffer))
+pub extern "C" fn free_managed_buffer(buffer: ManagedBuffer) {
+    drop(buffer)
 }
 
 #[no_mangle]
@@ -52,7 +51,7 @@ pub unsafe extern "C" fn free_managed_buffer(buffer: *const ManagedBuffer) {
 /// * `hash_path` - C string path to the hash table.
 /// * `is_signed` - Makes [`Value::SHORT`] and [`Value::CHAR`] print in signed form.
 /// * `endian` - The endian to use. 0 is Big, 1 is Little. Anything else will resolve to [`Endian::NATIVE`].
-pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *const i8, is_signed: bool, endian: u8, delim: u8) -> *const ManagedBuffer {
+pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *const i8, is_signed: bool, endian: u8, delim: u8) -> ManagedBuffer {
     let slice = slice::from_raw_parts(data, len);
     let mut reader = Cursor::new(slice);
     let mut bcsv = BCSV::new();
@@ -67,9 +66,9 @@ pub unsafe extern "C" fn bcsv_to_csv(data: *const u8, len: usize, hash_path: *co
         bcsv.hash_table = hashes;
         let csv = bcsv.convert_to_csv(is_signed, delim as char).unwrap_or_default();
         let buffer = ManagedBuffer::new(csv);
-        buffer.as_raw()
+        buffer
     } else {
-        ptr::null()
+        ManagedBuffer {buffer: ptr::null_mut(), len: 0, capacity: 0}
     }
 }
 
@@ -101,7 +100,7 @@ pub unsafe extern "C" fn bcsv_to_xlsx(hash_path: *const i8, output_path: *const 
 
 #[no_mangle]
 /// Converts a CSV to BCSV. Will return an empty buffer if anything goes wrong.
-pub unsafe extern "C" fn csv_to_bcsv(path: *const i8, endian: u8, delim: u8) -> *const ManagedBuffer {
+pub unsafe extern "C" fn csv_to_bcsv(path: *const i8, endian: u8, delim: u8) -> ManagedBuffer {
     let endian = match endian {
         0 => Endian::Big,
         1 => Endian::Little,
@@ -111,5 +110,5 @@ pub unsafe extern "C" fn csv_to_bcsv(path: *const i8, endian: u8, delim: u8) -> 
     let bcsv = csv_parse::CSV::from_path(path, delim as char).unwrap_or_default();
     let data = bcsv.to_bytes(endian).unwrap_or_default();
     let buffer = ManagedBuffer::new(data);
-    Arc::into_raw(buffer)
+    buffer
 }
